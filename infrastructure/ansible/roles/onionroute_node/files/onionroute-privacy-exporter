@@ -1,0 +1,134 @@
+#!/usr/bin/python3
+"""Loopback-only exporter that removes high-resolution gateway usage metrics."""
+
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import math
+import threading
+import time
+import urllib.request
+
+SOURCE = "http://127.0.0.1:9090"
+MAX_BODY = 65536
+ALLOWED_COUNTERS = {
+    "onionroute_gateway_dns_failures_total",
+    "onionroute_gateway_egress_failures_total",
+    "onionroute_gateway_protocol_violations_total",
+    "onionroute_gateway_streams_opened_total",
+    "onionroute_gateway_client_to_egress_bytes_total",
+    "onionroute_gateway_egress_to_client_bytes_total",
+}
+
+
+def bucket(value, bounds):
+    for index, upper in enumerate(bounds):
+        if value <= upper:
+            return index
+    return len(bounds)
+
+
+def parse_metrics(body):
+    values = {}
+    for raw_line in body.decode("ascii", "strict").splitlines():
+        if not raw_line or raw_line.startswith("#"):
+            continue
+        parts = raw_line.split()
+        if len(parts) != 2 or "{" in parts[0] or "}" in parts[0]:
+            raise ValueError("labeled or malformed source metric")
+        name, value = parts
+        if name in ALLOWED_COUNTERS or name in {
+            "onionroute_gateway_active_sessions", "onionroute_gateway_ready"
+        }:
+            if name in values:
+                raise ValueError("duplicate source metric")
+            parsed = float(value)
+            if not math.isfinite(parsed) or parsed < 0:
+                raise ValueError("invalid source metric value")
+            values[name] = parsed
+    required = {
+        "onionroute_gateway_active_sessions",
+        "onionroute_gateway_ready",
+        "onionroute_gateway_streams_opened_total",
+        "onionroute_gateway_egress_failures_total",
+        "onionroute_gateway_protocol_violations_total",
+        "onionroute_gateway_client_to_egress_bytes_total",
+        "onionroute_gateway_egress_to_client_bytes_total",
+    }
+    if not required.issubset(values):
+        raise ValueError("source metric set is incomplete")
+    return values
+
+
+class PrivacyView:
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._previous = None
+        self._previous_time = None
+
+    def render(self, values, now=None):
+        now = time.monotonic() if now is None else now
+        with self._lock:
+            previous, previous_time = self._previous, self._previous_time
+            self._previous, self._previous_time = values.copy(), now
+        bandwidth_rate = 0.0
+        error_rate = 0.0
+        if previous is not None and now > previous_time:
+            elapsed = now - previous_time
+            byte_names = (
+                "onionroute_gateway_client_to_egress_bytes_total",
+                "onionroute_gateway_egress_to_client_bytes_total",
+            )
+            byte_delta = sum(max(0.0, values[n] - previous[n]) for n in byte_names)
+            bandwidth_rate = byte_delta / elapsed
+            opened = max(1.0, values["onionroute_gateway_streams_opened_total"] - previous["onionroute_gateway_streams_opened_total"])
+            errors = sum(max(0.0, values[n] - previous[n]) for n in (
+                "onionroute_gateway_egress_failures_total",
+                "onionroute_gateway_protocol_violations_total",
+            ))
+            error_rate = min(1.0, errors / opened)
+        lines = [
+            f'onionroute_gateway_ready {int(values["onionroute_gateway_ready"] > 0)}',
+            f'onionroute_gateway_active_session_bucket {bucket(values["onionroute_gateway_active_sessions"], [0, 1, 7, 31, 127, 511])}',
+            f'onionroute_gateway_bandwidth_bucket {bucket(bandwidth_rate, [0, 65536, 262144, 1048576, 4194304, 16777216])}',
+            f'onionroute_gateway_stream_error_rate {error_rate:.6f}',
+            f'onionroute_gateway_egress_failures_total {int(values["onionroute_gateway_egress_failures_total"])}',
+            f'onionroute_gateway_dns_failures_total {int(values.get("onionroute_gateway_dns_failures_total", 0))}',
+        ]
+        return "\n".join(lines) + "\n"
+
+
+VIEW = PrivacyView()
+
+
+def fetch(path):
+    with urllib.request.urlopen(SOURCE + path, timeout=2) as response:
+        body = response.read(MAX_BODY + 1)
+    if len(body) > MAX_BODY:
+        raise ValueError("source response too large")
+    return body
+
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            if self.path == "/metrics":
+                payload = VIEW.render(parse_metrics(fetch("/metrics"))).encode("ascii")
+            elif self.path == "/healthz":
+                fetch("/healthz")
+                payload = b"ok\n"
+            else:
+                self.send_error(404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; version=0.0.4")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception:
+            self.send_error(503)
+
+    def log_message(self, *_args):
+        return
+
+
+if __name__ == "__main__":
+    HTTPServer(("127.0.0.1", 9190), Handler).serve_forever(poll_interval=0.5)

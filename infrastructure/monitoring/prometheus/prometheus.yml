@@ -1,0 +1,52 @@
+global:
+  scrape_interval: 30s
+  scrape_timeout: 10s
+  evaluation_interval: 30s
+  external_labels:
+    environment: production
+    monitor: onionroute-operations
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  - job_name: onionroute-gateway-privacy
+    scheme: http
+    metrics_path: /metrics
+    proxy_url: http://127.0.0.1:8118
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/*.json]
+        refresh_interval: 1m
+    relabel_configs:
+      - source_labels: [endpoint]
+        regex: privacy
+        action: keep
+      - source_labels: [node_id]
+        target_label: instance
+      - action: labeldrop
+        regex: endpoint|__meta_.*
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: onionroute_gateway_(ready|active_session_bucket|bandwidth_bucket|stream_error_rate|egress_failures_total|dns_failures_total)
+        action: keep
+
+  - job_name: onionroute-node
+    scheme: http
+    metrics_path: /metrics
+    proxy_url: http://127.0.0.1:8118
+    file_sd_configs:
+      - files: [/etc/prometheus/targets/*.json]
+        refresh_interval: 1m
+    relabel_configs:
+      - source_labels: [endpoint]
+        regex: node
+        action: keep
+      - source_labels: [node_id]
+        target_label: instance
+      - action: labeldrop
+        regex: endpoint|__meta_.*
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: node_cpu_seconds_total|node_memory_MemAvailable_bytes|node_memory_MemTotal_bytes|node_filesystem_avail_bytes|node_filesystem_size_bytes|onionroute_tor_bootstrap_percent|onionroute_onion_available|onionroute_clock_drift_seconds|onionroute_key_expiry_seconds
+        action: keep
+

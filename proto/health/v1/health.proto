@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+package onionroute.health.v1;
+
+import "common/v1/common.proto";
+
+service HealthCollectorService {
+  rpc Report(ReportRequest) returns (ReportResponse);
+}
+
+// This schema is intentionally closed: arbitrary labels are forbidden. Reports
+// must not contain account/device identifiers, IPs, destinations, DNS names,
+// per-flow values, or traffic payloads.
+message ReportRequest {
+  onionroute.common.v1.ProtocolVersion format_version = 1;
+  bytes report_nonce = 2;
+  onionroute.common.v1.UnixTimestamp interval_start = 3;
+  uint32 interval_seconds = 4;
+  ClientPlatform platform = 5;
+  repeated HealthCounter counters = 6;
+}
+
+enum ClientPlatform {
+  CLIENT_PLATFORM_UNSPECIFIED = 0;
+  CLIENT_PLATFORM_DESKTOP = 1;
+  CLIENT_PLATFORM_ANDROID = 2;
+  CLIENT_PLATFORM_IOS = 3;
+}
+
+message HealthCounter {
+  HealthMetric metric = 1;
+  uint64 value = 2;
+}
+
+enum HealthMetric {
+  HEALTH_METRIC_UNSPECIFIED = 0;
+  HEALTH_METRIC_CONNECT_SUCCESS = 1;
+  HEALTH_METRIC_CONNECT_FAILURE = 2;
+  HEALTH_METRIC_ROTATION_SUCCESS = 3;
+  HEALTH_METRIC_ROTATION_FAILURE = 4;
+  HEALTH_METRIC_TOR_BOOTSTRAP_DURATION_BUCKET = 5;
+  HEALTH_METRIC_GATEWAY_RTT_BUCKET = 6;
+  HEALTH_METRIC_KILL_SWITCH_FAILURE = 7;
+}
+
+message ReportResponse {
+  bool accepted = 1;
+  onionroute.common.v1.ErrorStatus error = 2;
+}

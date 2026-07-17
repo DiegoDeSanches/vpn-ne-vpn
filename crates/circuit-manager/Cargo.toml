@@ -1,0 +1,26 @@
+[package]
+name = "onionroute-circuit-manager"
+version = "0.1.0"
+description = "Isolated Tor circuit lifecycle and bounded rotation for OnionRoute"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Temporary standalone workspace until CP-0001 is accepted.
+[workspace]
+
+[features]
+default = []
+test-utils = ["onionroute-common-types/test-utils", "onionroute-tor-backend/test-utils"]
+
+[dependencies]
+onionroute-common-types = { path = "../common-types" }
+onionroute-tor-backend = { path = "../tor-backend" }
+rand = "=0.8.5"
+tokio = { version = "=1.38.0", features = ["macros", "sync", "time"] }
+tokio-util = { version = "=0.7.11", features = ["rt"] }
+
+[dev-dependencies]
+onionroute-common-types = { path = "../common-types", features = ["test-utils"] }
+onionroute-tor-backend = { path = "../tor-backend", features = ["test-utils"] }
+tokio = { version = "=1.38.0", features = ["macros", "rt-multi-thread", "time"] }

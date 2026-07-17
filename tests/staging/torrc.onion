@@ -1,0 +1,11 @@
+ClientOnly 1
+SocksPort 0
+ControlPort 0
+DataDirectory /var/lib/onionroute-tor
+HiddenServiceDir /var/lib/onionroute-tor/exit-service
+HiddenServiceVersion 3
+HiddenServicePort 443 127.0.0.1:8443
+Log notice stdout
+
+# TEST/STAGING ONLY. The resulting onion identity must be injected through the
+# normal signed directory ceremony; the runner never reads hostname directly.

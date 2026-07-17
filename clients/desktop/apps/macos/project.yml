@@ -1,0 +1,41 @@
+name: OnionRoute
+options:
+  deploymentTarget:
+    macOS: "13.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: REPLACE_WITH_APPROVED_TEAM_ID
+    CODE_SIGN_STYLE: Manual
+    SWIFT_VERSION: "5.10"
+packages:
+  SwiftProtobuf:
+    url: https://github.com/apple/swift-protobuf.git
+    from: 1.28.2
+targets:
+  OnionRoute:
+    type: application
+    platform: macOS
+    sources: [OnionRoute]
+    entitlements:
+      path: OnionRoute/OnionRoute.entitlements
+    dependencies:
+      - target: OnionRoutePacketTunnel
+      - package: SwiftProtobuf
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.onionroute.desktop
+  OnionRoutePacketTunnel:
+    type: app-extension
+    platform: macOS
+    sources: [PacketTunnel]
+    entitlements:
+      path: PacketTunnel/PacketTunnel.entitlements
+    dependencies:
+      - package: SwiftProtobuf
+      # The signed universal Rust static library is supplied by the release build.
+      - sdk: NetworkExtension.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.onionroute.desktop.PacketTunnel
+        INFOPLIST_FILE: PacketTunnel/Info.plist
+

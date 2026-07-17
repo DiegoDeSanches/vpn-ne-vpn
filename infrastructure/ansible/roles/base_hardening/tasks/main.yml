@@ -1,0 +1,231 @@
+---
+- name: Require Debian 12 baseline
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == 'Debian'
+      - ansible_facts.distribution_major_version == '12'
+    fail_msg: Only the pinned Debian 12 baseline is supported.
+
+- name: Install minimal pinned hardening packages
+  ansible.builtin.apt:
+    name:
+      - apparmor
+      - apparmor-utils
+      - auditd
+      - ca-certificates
+      - chrony
+      - nftables
+      - openssl
+      - openssh-server
+      - prometheus-node-exporter
+      - python3-jsonschema
+      - tor
+    state: present
+    install_recommends: false
+    update_cache: true
+
+- name: Remove interactive and legacy network tools
+  ansible.builtin.apt:
+    name:
+      - telnet
+      - ftp
+      - rsh-client
+      - talk
+      - netcat-openbsd
+      - tcpdump
+    state: absent
+    purge: true
+
+- name: Install monitoring control-plane packages only on its dedicated image
+  when: onionroute_node_role == 'monitoring'
+  ansible.builtin.apt:
+    name:
+      - prometheus
+      - privoxy
+    state: present
+    install_recommends: false
+
+- name: Create locked administrative account
+  ansible.builtin.user:
+    name: "{{ onionroute_admin_user }}"
+    shell: /bin/bash
+    password_lock: true
+    create_home: true
+    groups: adm
+    append: false
+
+- name: Install certificate-only loopback SSH policy
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/90-onionroute.conf
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      AddressFamily inet
+      ListenAddress 127.0.0.1
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      ChallengeResponseAuthentication no
+      PermitRootLogin no
+      PermitEmptyPasswords no
+      PubkeyAuthentication yes
+      AuthenticationMethods publickey
+      TrustedUserCAKeys {{ onionroute_ssh_ca_public_key }}
+      AuthorizedPrincipalsFile /etc/ssh/auth_principals/%u
+      AllowUsers {{ onionroute_admin_user }}
+      AllowTcpForwarding no
+      AllowAgentForwarding no
+      X11Forwarding no
+      PermitTunnel no
+      GatewayPorts no
+      MaxAuthTries 3
+      LoginGraceTime 20
+      ClientAliveInterval 30
+      ClientAliveCountMax 2
+      LogLevel VERBOSE
+  notify: Validate SSH configuration
+
+- name: Create SSH principal directory
+  ansible.builtin.file:
+    path: /etc/ssh/auth_principals
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Limit SSH certificate principal
+  ansible.builtin.copy:
+    dest: "/etc/ssh/auth_principals/{{ onionroute_admin_user }}"
+    owner: root
+    group: root
+    mode: '0644'
+    content: "onionroute-admin\n"
+
+- name: Apply fail-closed kernel network policy
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-onionroute.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      kernel.kptr_restrict=2
+      kernel.dmesg_restrict=1
+      kernel.unprivileged_bpf_disabled=1
+      kernel.yama.ptrace_scope=2
+      fs.protected_fifos=2
+      fs.protected_regular=2
+      net.ipv4.conf.all.accept_redirects=0
+      net.ipv4.conf.default.accept_redirects=0
+      net.ipv4.conf.all.send_redirects=0
+      net.ipv4.conf.default.send_redirects=0
+      net.ipv4.conf.all.accept_source_route=0
+      net.ipv4.conf.default.accept_source_route=0
+      net.ipv4.conf.all.rp_filter=1
+      net.ipv4.conf.default.rp_filter=1
+      net.ipv4.tcp_syncookies=1
+      net.ipv6.conf.all.disable_ipv6=1
+      net.ipv6.conf.default.disable_ipv6=1
+  notify: Reload sysctl
+
+- name: Configure authenticated time with bounded sources
+  ansible.builtin.copy:
+    dest: /etc/chrony/chrony.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      server time.cloudflare.com iburst nts maxsources 2
+      ntsdumpdir /var/lib/chrony
+      driftfile /var/lib/chrony/chrony.drift
+      makestep 0.1 3
+      maxupdateskew 100.0
+      rtcsync
+      bindcmdaddress 127.0.0.1
+      cmdport 0
+      log tracking measurements statistics
+      logdir /var/log/chrony
+
+- name: Pin the resolver to the signed image DNS allow-list
+  ansible.builtin.copy:
+    dest: /etc/resolv.conf
+    owner: root
+    group: root
+    mode: '0644'
+    follow: false
+    content: |
+      {% for address in onionroute_dns_v4 %}
+      nameserver {{ address }}
+      {% endfor %}
+      options edns0 trust-ad timeout:2 attempts:2
+
+- name: Create DHCP policy directory
+  ansible.builtin.file:
+    path: /etc/dhcp
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Keep DHCP clients from replacing the approved resolvers
+  ansible.builtin.copy:
+    dest: /etc/dhcp/dhclient.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      timeout 15;
+      retry 30;
+      supersede domain-name-servers {{ onionroute_dns_v4 | join(', ') }};
+
+- name: Configure volatile journal for service data minimization
+  ansible.builtin.copy:
+    dest: /etc/systemd/journald.conf.d/90-onionroute.conf
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      [Journal]
+      Storage=volatile
+      RuntimeMaxUse=64M
+      MaxRetentionSec=1day
+      ForwardToSyslog=no
+      Seal=yes
+      Compress=yes
+
+- name: Audit only administrative sessions and privileged mutations
+  ansible.builtin.copy:
+    dest: /etc/audit/rules.d/90-onionroute-admin.rules
+    owner: root
+    group: root
+    mode: '0600'
+    content: |
+      -D
+      -b 8192
+      -f 1
+      -a always,exit -F arch=b64 -S execve -F auid>=1000 -F auid!=4294967295 -k admin_exec
+      -w /etc/sudoers -p wa -k admin_policy
+      -w /etc/ssh -p wa -k admin_policy
+      -w /etc/systemd/system -p wa -k admin_policy
+      -w /etc/nftables.conf -p wa -k admin_policy
+      -w /etc/onionroute -p wa -k admin_policy
+      --loginuid-immutable
+
+- name: Disable mutable unattended upgrades on immutable nodes
+  ansible.builtin.copy:
+    dest: /etc/apt/apt.conf.d/99-onionroute-immutable
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      APT::Periodic::Enable "0";
+      APT::Periodic::Unattended-Upgrade "0";
+      DPkg::Pre-Install-Pkgs { "/bin/false"; };
+
+- name: Enable mandatory access control and administrative audit
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+  loop:
+    - apparmor
+    - auditd
+    - chrony

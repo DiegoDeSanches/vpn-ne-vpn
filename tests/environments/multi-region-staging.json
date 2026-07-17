@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "multi-region-staging",
+  "environment_class": "multi_region_staging",
+  "release_evidence": true,
+  "tor": "real Tor across independent staging regions",
+  "topology": ["client_region", "entry_region", "relay_region", "exit_region", "controlled_destination_region"],
+  "capabilities": ["standard", "enhanced", "maximum", "country-change", "regional-outage", "directory-revocation", "capacity"],
+  "required_evidence": ["failure-domain-inventory", "signed-directory-digest", "regional-pcaps", "chaos-timeline-buckets", "capacity-report"],
+  "limitations": ["requires independent cloud, admin, and KMS domains to claim Maximum"]
+}

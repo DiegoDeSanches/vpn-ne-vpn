@@ -1,0 +1,38 @@
+[Unit]
+Description=OnionRoute fail-closed desktop protection daemon
+Documentation=file:/usr/share/doc/onionroute-desktop/architecture.md
+DefaultDependencies=no
+After=local-fs.target dbus.service
+Before=network-pre.target network-online.target
+Wants=network-pre.target
+Requires=onionroute.socket
+
+[Service]
+Type=notify
+User=onionroute
+Group=onionroute
+ExecStartPre=/usr/libexec/onionroute-desktop-daemon --install-emergency-block
+ExecStartPre=/usr/libexec/onionroute-desktop-daemon --verify-kill-switch
+ExecStart=/usr/libexec/onionroute-desktop-daemon --systemd
+Restart=always
+RestartSec=2s
+WatchdogSec=30s
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+DeviceAllow=/dev/net/tun rw
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ReadWritePaths=/run/onionroute /var/lib/onionroute /var/lib/onionroute/diagnostics
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallArchitectures=native
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=multi-user.target
+

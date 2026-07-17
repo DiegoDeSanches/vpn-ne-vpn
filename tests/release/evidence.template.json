@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "release_candidate_digest": "SET-ME-sha256",
+  "environments": [],
+  "blocking_gates": {
+    "clearnet_leak": null,
+    "isp_dns": null,
+    "ipv6_bypass": null,
+    "unsigned_directory_accepted": null,
+    "expired_token_accepted": null,
+    "unbounded_protocol_allocation": null,
+    "kill_switch_lost_on_ui_crash": null,
+    "direct_reconnect_fallback": null,
+    "destination_in_telemetry": null
+  },
+  "security_regressions": [],
+  "reports": []
+}

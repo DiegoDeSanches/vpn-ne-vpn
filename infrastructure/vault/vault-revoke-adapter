@@ -1,0 +1,23 @@
+#!/bin/sh
+set -eu
+
+[ "$#" -eq 4 ] || exit 64
+[ "$1" = v1 ] || exit 64
+cloud=$2
+[ "$3" = revoke ] || exit 64
+node_id=$4
+
+: "${VAULT_ADDR:?set the HTTPS Vault endpoint}"
+case "$VAULT_ADDR" in https://*) ;; *) exit 64 ;; esac
+case "$cloud" in aws|gcp) ;; *) exit 64 ;; esac
+case "$node_id" in ''|*[!a-z0-9-]*) exit 64 ;; esac
+[ "${#node_id}" -le 40 ] || exit 64
+command -v vault >/dev/null 2>&1 || exit 69
+
+# Deleting both exact roles prevents re-authentication. Existing batch tokens have
+# a hard two-minute max TTL. No secret or token value is read by this adapter.
+status=0
+vault delete "auth/$cloud/role/$node_id" >/dev/null || status=1
+vault delete "auth/$cloud/role/$node_id-onion" >/dev/null || status=1
+exit "$status"
+

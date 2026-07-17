@@ -1,0 +1,18 @@
+[package]
+name = "onionroute-direct-tor-proxy"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+description = "Experimental application-scoped SOCKS5-to-Tor proxy for OnionRoute desktop"
+
+# Kept standalone until the desktop workspace owner explicitly integrates it.
+[workspace]
+resolver = "2"
+
+[dependencies]
+thiserror = "=1.0.64"
+tokio = { version = "=1.40.0", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+
+[dev-dependencies]
+tokio = { version = "=1.40.0", features = ["io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }

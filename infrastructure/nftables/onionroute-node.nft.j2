@@ -1,0 +1,122 @@
+#!/usr/sbin/nft -f
+
+flush ruleset
+
+table inet onionroute {
+    set forbidden_v4 {
+        type ipv4_addr
+        flags interval
+        elements = {
+            0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+            169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24,
+            192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15,
+            198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4,
+            240.0.0.0/4
+        }
+    }
+
+    set forbidden_v6 {
+        type ipv6_addr
+        flags interval
+        elements = { ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8, 2001:db8::/32 }
+    }
+
+    set dangerous_tcp_ports {
+        type inet_service
+        elements = { 22, 23, 25, 111, 135, 139, 445, 2375, 2376, 3306,
+                     3389, 5432, 5900, 6379, 6443, 9051, 9151, 9200,
+                     11211, 27017 }
+    }
+
+    set dns_v4 {
+        type ipv4_addr
+        elements = { {{ onionroute_dns_v4 | join(', ') }} }
+    }
+
+    set ntp_v4 {
+        type ipv4_addr
+        elements = { {{ onionroute_ntp_v4 | join(', ') }} }
+    }
+
+    set dependency_v4 {
+        type ipv4_addr
+        elements = { {{ onionroute_dependency_v4 | default([]) | join(', ') }} }
+    }
+
+    set next_hop_v4 {
+        type ipv4_addr
+        elements = { {{ onionroute_next_hop_v4 | default([]) | join(', ') }} }
+    }
+
+    set management_v4 {
+        type ipv4_addr
+        flags interval
+        elements = { {{ onionroute_management_v4 | default([]) | join(', ') }} }
+    }
+
+    set metadata_v4 {
+        type ipv4_addr
+        elements = { 169.254.169.254, 100.100.100.200, 168.63.129.16 }
+    }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iifname "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy drop;
+        oifname "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+
+        # IPv4 DHCP is the only root-owned network bootstrap exception.
+        meta skuid 0 udp sport 68 udp dport 67 accept
+
+        # Workload identity is reachable only by the two secret agents. The Tor
+        # daemon shares debian-tor but its systemd cgroup denies metadata below.
+        meta skuid "onionroute-vault" ip daddr 169.254.169.254 tcp dport 80 accept
+        meta skuid "debian-tor" ip daddr 169.254.169.254 tcp dport 80 accept
+        meta skuid "onionroute-bootstrap" ip daddr 169.254.169.254 tcp dport 80 accept
+
+        ip daddr @metadata_v4 drop
+        ip daddr @management_v4 drop
+
+        # Exact private dependencies are exceptions to the broad RFC1918 deny.
+        # Their sets are image inputs and cloud policy independently restricts them.
+        meta skuid "onionroute-vault" ip daddr @dependency_v4 tcp dport 443 accept
+{% if onionroute_node_role in ['entry', 'relay'] %}
+        meta skuid "{{ onionroute_service_user }}" ip daddr @next_hop_v4 tcp dport {{ onionroute_next_hop_port }} accept
+{% elif onionroute_node_role != 'exit' %}
+        meta skuid "{{ onionroute_service_user }}" ip daddr @dependency_v4 tcp dport { 443, 5432 } accept
+{% endif %}
+
+        ip daddr @forbidden_v4 drop
+        ip6 daddr @forbidden_v6 drop
+
+        meta skuid "_chrony" ip daddr @dns_v4 udp dport 53 accept
+        meta skuid "_chrony" ip daddr @dns_v4 tcp dport 53 accept
+        meta skuid "_chrony" ip daddr @ntp_v4 udp dport 123 accept
+        meta skuid "_chrony" ip daddr @ntp_v4 tcp dport 4460 accept
+
+        meta skuid "onionroute-vault" ip daddr @dns_v4 udp dport 53 accept
+        meta skuid "onionroute-vault" ip daddr @dns_v4 tcp dport 53 accept
+
+        # Tor performs all onion reachability. It cannot reach private, metadata,
+        # management or IPv6 destinations because the drops above take precedence.
+        meta skuid "debian-tor" tcp accept
+
+{% if onionroute_node_role == 'exit' %}
+        meta skuid "{{ onionroute_service_user }}" ip daddr @dns_v4 udp dport 53 accept
+        meta skuid "{{ onionroute_service_user }}" ip daddr @dns_v4 tcp dport 53 accept
+        meta skuid "{{ onionroute_service_user }}" tcp dport @dangerous_tcp_ports drop
+        meta skuid "{{ onionroute_service_user }}" tcp accept
+{% endif %}
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+}

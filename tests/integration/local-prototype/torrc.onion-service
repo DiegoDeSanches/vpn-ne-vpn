@@ -1,0 +1,8 @@
+DataDirectory /var/lib/tor
+SocksPort 0
+HiddenServiceDir /runtime/onion-service
+HiddenServiceVersion 3
+HiddenServicePort 443 127.0.0.1:18443
+AvoidDiskWrites 1
+Log notice stdout
+

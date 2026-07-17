@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+package onionroute.gateway.v1;
+
+import "common/v1/common.proto";
+import "gateway/v1/types.proto";
+
+message ClientHello {
+  // The range covers exactly one major. The server selects the highest common
+  // minor and proves that choice by returning its complete supported range.
+  onionroute.common.v1.ProtocolVersionRange supported_versions = 1;
+  // At most 32 lower-case ASCII names, each at most 64 bytes. The "required:"
+  // prefix makes absence fatal instead of optional.
+  repeated string client_capabilities = 2;
+  AnonymityMode anonymity_mode = 3;
+  // Empty means automatic selection; otherwise exactly two upper-case ASCII.
+  string desired_country = 4;
+  // Exactly 32 random bytes, new for every transport.
+  bytes session_nonce = 5;
+  uint32 maximum_frame_size = 6;
+  uint32 initial_connection_receive_window = 7;
+  uint32 initial_stream_receive_window = 8;
+}
+
+message ServerHello {
+  onionroute.common.v1.ProtocolVersionRange supported_versions = 1;
+  onionroute.common.v1.ProtocolVersion selected_version = 2;
+  repeated string enabled_capabilities = 3;
+  bytes echoed_client_nonce = 4;
+  // Exactly 32 random bytes.
+  bytes server_nonce = 5;
+  // Exactly 16 random bytes and never stable across reconnects.
+  bytes ephemeral_session_id = 6;
+  uint32 maximum_frame_size = 7;
+  uint32 maximum_concurrent_streams = 8;
+  uint32 initial_connection_receive_window = 9;
+  uint32 initial_stream_receive_window = 10;
+  uint32 idle_stream_timeout_ms = 11;
+  uint32 session_ttl_seconds = 12;
+}
+
+message Authenticate {
+  // Anonymous, short-lived and bounded to 4096 bytes. It MUST NOT encode an
+  // account, device, payment identifier, or client address.
+  bytes anonymous_capability_token = 1;
+  // Optional token-scheme proof over session_nonce_binding, at most 4096 bytes.
+  bytes proof_of_possession = 2;
+  // SHA-256 domain-separated binding of both hello nonces, ephemeral session ID,
+  // and selected version. Exactly 32 bytes.
+  bytes session_nonce_binding = 3;
+}
+
+message AuthenticationResult {
+  bool accepted = 1;
+  ErrorCode error_code = 2;
+  repeated string granted_capabilities = 3;
+  // Unix seconds; zero only when authentication failed.
+  int64 expires_at_unix_seconds = 4;
+}

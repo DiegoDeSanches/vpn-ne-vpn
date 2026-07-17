@@ -1,0 +1,27 @@
+[package]
+name = "onionroute-directory-service"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+ahash.workspace = true
+async-trait.workspace = true
+home.workspace = true
+axum.workspace = true
+semver.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+onionroute-directory-client = { path = "../../crates/directory-client" }
+parking_lot.workspace = true
+parking_lot_core.workspace = true
+
+[dev-dependencies]
+http-body-util.workspace = true
+tower.workspace = true

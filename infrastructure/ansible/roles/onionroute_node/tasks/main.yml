@@ -1,0 +1,346 @@
+---
+- name: Create isolated role group
+  ansible.builtin.group:
+    name: "{{ onionroute_service_group }}"
+    system: true
+
+- name: Create isolated role user
+  ansible.builtin.user:
+    name: "{{ onionroute_service_user }}"
+    group: "{{ onionroute_service_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    password_lock: true
+
+- name: Create privacy metrics account
+  ansible.builtin.user:
+    name: onionroute-metrics
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    password_lock: true
+
+- name: Create metadata bootstrap account
+  ansible.builtin.user:
+    name: onionroute-bootstrap
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    password_lock: true
+
+- name: Create Vault delivery account before firewall validation
+  ansible.builtin.user:
+    name: "{{ onionroute_vault_user }}"
+    group: "{{ onionroute_service_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    password_lock: true
+
+- name: Select required role secret
+  ansible.builtin.set_fact:
+    onionroute_required_secret: "{{ {
+      'entry': 'gateway-identity.key',
+      'exit': 'gateway-identity.key',
+      'relay': 'mtls.key',
+      'directory': 'mtls.key',
+      'token': 'token-signing.key',
+      'health-collector': 'monitoring.token',
+      'signing': 'directory-signing.key',
+      'monitoring': 'monitoring.token',
+      'management': 'mtls.key'
+    }[onionroute_node_role] }}"
+
+- name: Create immutable platform directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner }}"
+    group: "{{ item.group }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: /etc/onionroute, owner: root, group: root, mode: '0755' }
+    - { path: /opt/onionroute, owner: root, group: root, mode: '0755' }
+    - { path: /usr/share/onionroute/trust, owner: root, group: root, mode: '0755' }
+    - { path: /usr/share/doc/onionroute-platform, owner: root, group: root, mode: '0755' }
+    - { path: /usr/local/libexec, owner: root, group: root, mode: '0755' }
+    - { path: /etc/systemd/system/tor@default.service.d, owner: root, group: root, mode: '0755' }
+    - { path: /etc/systemd/system/prometheus-node-exporter.service.d, owner: root, group: root, mode: '0755' }
+
+- name: Install fail-closed nftables policy
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../nftables/onionroute-node.nft.j2"
+    dest: /etc/nftables.conf
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Validate nftables policy without applying it to the image builder
+  ansible.builtin.command: /usr/sbin/nft --check --file /etc/nftables.conf
+  changed_when: false
+
+- name: Install release verification helpers
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/libexec/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - onionroute-wait-secret
+    - onionroute-bootstrap
+    - onionroute-verify-release
+    - onionroute-render-exit-config
+    - onionroute-validate-config
+    - onionroute-platform-metrics
+    - onionroute-privacy-exporter
+
+- name: Install hardened role unit
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../systemd/onionroute-role.service.j2"
+    dest: /etc/systemd/system/onionroute-role.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install node target
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/onionroute-node.target"
+    dest: /etc/systemd/system/onionroute-node.target
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install bounded workload metadata bootstrap unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/onionroute-bootstrap.service"
+    dest: /etc/systemd/system/onionroute-bootstrap.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install privacy-safe monitoring units
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/{{ item }}"
+    dest: "/etc/systemd/system/{{ item }}"
+    owner: root
+    group: root
+    mode: '0644'
+  loop:
+    - onionroute-platform-metrics.service
+    - onionroute-platform-metrics.timer
+    - onionroute-privacy-exporter.service
+
+- name: Create node exporter textfile directory
+  ansible.builtin.file:
+    path: /var/lib/prometheus/node-exporter
+    state: directory
+    owner: root
+    group: prometheus
+    mode: '0755'
+
+- name: Bind node exporter to loopback with fixed collectors
+  ansible.builtin.copy:
+    dest: /etc/default/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: '0644'
+    content: 'ARGS="--web.listen-address=127.0.0.1:9100 --collector.disable-defaults --collector.cpu --collector.meminfo --collector.filesystem --collector.textfile --collector.textfile.directory=/var/lib/prometheus/node-exporter"\n'
+
+- name: Harden node exporter service
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/prometheus-node-exporter.conf"
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/90-onionroute.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install privacy-safe Prometheus configuration
+  when: onionroute_node_role == 'monitoring'
+  block:
+    - name: Create Prometheus target directory
+      ansible.builtin.file:
+        path: /etc/prometheus/targets
+        state: directory
+        owner: root
+        group: "{{ onionroute_service_group }}"
+        mode: '0750'
+    - name: Copy Prometheus configuration and alert rules
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../monitoring/prometheus/{{ item.src }}"
+        dest: "{{ item.dest }}"
+        owner: root
+        group: "{{ onionroute_service_group }}"
+        mode: '0640'
+      loop:
+        - { src: prometheus.yml, dest: /etc/prometheus/prometheus.yml }
+        - { src: alerts.yml, dest: /etc/prometheus/alerts.yml }
+        - { src: targets.example.json, dest: /usr/share/doc/onionroute-platform/targets.example.json }
+    - name: Give monitoring service its dedicated storage
+      ansible.builtin.file:
+        path: /var/lib/prometheus
+        state: directory
+        owner: "{{ onionroute_service_user }}"
+        group: "{{ onionroute_service_group }}"
+        mode: '0750'
+    - name: Configure loopback HTTP-to-Tor proxy without request logs
+      ansible.builtin.copy:
+        dest: /etc/privoxy/config
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          listen-address 127.0.0.1:8118
+          permit-access 127.0.0.1
+          deny-access 0.0.0.0/0
+          forward-socks5t / 127.0.0.1:9050 .
+          logfile /dev/null
+          toggle 1
+          enable-remote-toggle 0
+          enable-remote-http-toggle 0
+          enable-edit-actions 0
+    - name: Create Privoxy override directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/privoxy.service.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Harden the loopback proxy
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../systemd/privoxy-onionroute.conf"
+        dest: /etc/systemd/system/privoxy.service.d/90-onionroute.conf
+        owner: root
+        group: root
+        mode: '0644'
+    - name: Disable vendor Prometheus unit in favor of hardened role unit
+      ansible.builtin.systemd_service:
+        name: prometheus.service
+        enabled: false
+        state: stopped
+    - name: Validate Prometheus configuration
+      ansible.builtin.command: /usr/bin/promtool check config /etc/prometheus/prometheus.yml
+      changed_when: false
+
+- name: Harden Tor service
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/tor-onionroute.conf"
+    dest: /etc/systemd/system/tor@default.service.d/90-onionroute.conf
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Configure Tor without public listeners
+  ansible.builtin.copy:
+    dest: /etc/tor/torrc
+    owner: root
+    group: debian-tor
+    mode: '0640'
+    content: |
+      User debian-tor
+      DataDirectory /var/lib/tor
+      SocksPort 0
+      ControlPort 0
+      ControlSocket /run/tor/control
+      CookieAuthentication 1
+      CookieAuthFile /run/tor/control.authcookie
+      DisableNetwork 0
+      ClientOnly 1
+      SafeLogging 1
+      Log notice file /dev/null
+      HiddenServiceDir /run/onionroute/secrets/onion/data
+      HiddenServicePort 443 127.0.0.1:8443
+      HiddenServiceDir /run/onionroute/secrets/onion/management
+      HiddenServicePort 22 127.0.0.1:22
+      HiddenServicePort 9100 127.0.0.1:9100
+      HiddenServicePort 9190 127.0.0.1:9190
+      {% if onionroute_node_role == 'monitoring' %}
+      HiddenServicePort 9090 127.0.0.1:9090
+      SocksPort 127.0.0.1:9050 IsolateSOCKSAuth
+      ClientOnionAuthDir /run/onionroute/secrets/onion/client-auth
+      {% endif %}
+
+- name: Stop Tor in the image builder so no identity is generated into the image
+  ansible.builtin.systemd_service:
+    name: tor@default.service
+    state: stopped
+
+- name: Install AppArmor role profile
+  ansible.builtin.copy:
+    dest: /etc/apparmor.d/onionroute-role
+    owner: root
+    group: root
+    mode: '0644'
+    content: |
+      #include <tunables/global>
+      profile onionroute-role flags=(attach_disconnected,mediate_deleted) {
+        #include <abstractions/base>
+        #include <abstractions/nameservice>
+        /opt/onionroute/releases/**/bin/* rix,
+        /usr/bin/prometheus rix,
+        /etc/onionroute/** r,
+        /etc/prometheus/** r,
+        /usr/share/prometheus/** r,
+        /run/onionroute/secrets/app/** r,
+        /run/onionroute-*/** rw,
+        /var/lib/prometheus/** rwk,
+        network inet stream,
+        network inet6 stream,
+      {% if onionroute_node_role == 'exit' %}
+        network inet dgram,
+      {% endif %}
+        deny network raw,
+        deny /home/** rwklx,
+        deny /root/** rwklx,
+      }
+
+- name: Parse and load AppArmor role profile
+  ansible.builtin.command: /usr/sbin/apparmor_parser --replace /etc/apparmor.d/onionroute-role
+  changed_when: true
+
+- name: Render private exit configuration against runtime secrets
+  when: onionroute_node_role == 'exit'
+  ansible.builtin.template:
+    src: gateway.json.j2
+    dest: /etc/onionroute/gateway.template.json
+    owner: root
+    group: "{{ onionroute_service_group }}"
+    mode: '0640'
+
+- name: Install accepted private exit configuration schema
+  when: onionroute_node_role == 'exit'
+  block:
+    - name: Create schema directory
+      ansible.builtin.file:
+        path: /usr/share/onionroute/schemas
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Copy gateway schema without changing the protected contract
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../crates/gateway-daemon/config/gateway.schema.json"
+        dest: /usr/share/onionroute/schemas/gateway.schema.json
+        owner: root
+        group: root
+        mode: '0644'
+
+- name: Enable firewall and node target for first boot
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop:
+    - nftables.service
+    - onionroute-node.target
+    - onionroute-platform-metrics.timer
+    - onionroute-privacy-exporter.service
+    - prometheus-node-exporter.service
+
+- name: Enable loopback Tor proxy on monitoring nodes
+  when: onionroute_node_role == 'monitoring'
+  ansible.builtin.systemd_service:
+    name: privoxy.service
+    enabled: true
+    daemon_reload: true

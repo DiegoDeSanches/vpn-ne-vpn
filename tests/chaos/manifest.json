@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "faults": [
+    {"id": "CHAOS-001", "name": "packet_loss", "mechanism": "netem/fault proxy", "environments": ["local_lab", "adversarial"]},
+    {"id": "CHAOS-002", "name": "high_latency", "mechanism": "netem/fault proxy", "environments": ["simulation", "local_lab", "adversarial"]},
+    {"id": "CHAOS-003", "name": "bandwidth_limitation", "mechanism": "netem/fault proxy", "environments": ["simulation", "local_lab", "adversarial"]},
+    {"id": "CHAOS-004", "name": "process_kill", "mechanism": "supervisor/OS kill", "environments": ["simulation", "local_lab", "staging_real_onion"]},
+    {"id": "CHAOS-005", "name": "malformed_frames", "mechanism": "gateway v1 hostile corpus", "environments": ["local_lab", "adversarial"]},
+    {"id": "CHAOS-006", "name": "expired_certificates", "mechanism": "staging CA fixture", "environments": ["staging_real_onion", "adversarial"]},
+    {"id": "CHAOS-007", "name": "clock_skew", "mechanism": "VM/fake clock", "environments": ["local_lab", "adversarial"]},
+    {"id": "CHAOS-008", "name": "dns_failures", "mechanism": "resolver stop/malformed reply", "environments": ["local_lab", "staging_real_onion"]},
+    {"id": "CHAOS-009", "name": "partial_gateway_outage", "mechanism": "role/region isolation", "environments": ["multi_region_staging", "adversarial"]},
+    {"id": "CHAOS-010", "name": "database_outage", "mechanism": "control-plane firewall", "environments": ["staging_real_onion", "multi_region_staging"]},
+    {"id": "CHAOS-011", "name": "kms_outage", "mechanism": "KMS deny/timeout", "environments": ["staging_real_onion", "multi_region_staging"]},
+    {"id": "CHAOS-012", "name": "directory_signing_outage", "mechanism": "signer isolation", "environments": ["staging_real_onion", "multi_region_staging"]},
+    {"id": "CHAOS-013", "name": "disk_full", "mechanism": "quota/fault filesystem", "environments": ["local_lab", "adversarial"]},
+    {"id": "CHAOS-014", "name": "memory_pressure", "mechanism": "cgroup/OS pressure", "environments": ["local_lab", "adversarial"]}
+  ]
+}

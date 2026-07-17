@@ -1,0 +1,14 @@
+#!/bin/sh
+set -eu
+
+. /run/onionroute-bootstrap/node.env
+case "$ONIONROUTE_NODE_ID" in
+  ''|*[!A-Za-z0-9-]*) echo "invalid node id" >&2; exit 64 ;;
+esac
+
+template=/etc/onionroute/gateway.template.json
+destination=/run/onionroute-exit/gateway.json
+umask 077
+sed "s/__NODE_ID__/$ONIONROUTE_NODE_ID/g" "$template" > "$destination.tmp"
+chmod 0600 "$destination.tmp"
+mv -f "$destination.tmp" "$destination"

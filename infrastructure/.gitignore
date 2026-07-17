@@ -1,0 +1,16 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.auto.tfvars
+*.auto.tfvars.json
+crash.log
+artifacts/
+secrets/
+*.pem
+*.key
+*.p12
+*.token
+vault-response.json
+__pycache__/
+*.py[cod]

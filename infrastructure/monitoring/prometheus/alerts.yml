@@ -1,0 +1,43 @@
+groups:
+  - name: onionroute-platform
+    rules:
+      - alert: OnionRouteGatewayUnavailable
+        expr: up{job="onionroute-gateway-privacy"} == 0 or onionroute_gateway_ready == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Gateway is unavailable through its authenticated onion endpoint" }
+      - alert: OnionRouteTorNotBootstrapped
+        expr: onionroute_tor_bootstrap_percent < 100
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Tor has not reached the ready state" }
+      - alert: OnionRouteOnionUnavailable
+        expr: onionroute_onion_available == 0
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Expected onion key material or service is unavailable" }
+      - alert: OnionRouteStreamErrorRateHigh
+        expr: onionroute_gateway_stream_error_rate > 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations: { summary: "Coarse stream error rate is above ten percent" }
+      - alert: OnionRouteEgressFailures
+        expr: increase(onionroute_gateway_egress_failures_total[5m]) > 20
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Aggregate egress failures increased" }
+      - alert: OnionRouteKeyExpiring
+        expr: onionroute_key_expiry_seconds < 604800
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Online certificate expires within seven days" }
+      - alert: OnionRouteClockDrift
+        expr: abs(onionroute_clock_drift_seconds) > 1
+        for: 5m
+        labels: { severity: critical }
+        annotations: { summary: "Clock drift exceeds one second" }
+      - alert: OnionRouteDiskPressure
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes < 0.15
+        for: 15m
+        labels: { severity: warning }
+        annotations: { summary: "Less than fifteen percent disk space remains" }

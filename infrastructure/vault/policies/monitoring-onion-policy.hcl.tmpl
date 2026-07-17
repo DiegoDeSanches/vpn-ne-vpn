@@ -1,0 +1,4 @@
+# monitoring Tor agent only. Render NODE_SCOPE to the monitoring node scope.
+path "NODE_SCOPE/onion-service" { capabilities = ["read"] }
+path "NODE_SCOPE/onion-management" { capabilities = ["read"] }
+path "NODE_SCOPE/monitoring-onion-client" { capabilities = ["read"] }

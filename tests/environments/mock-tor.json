@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "mock-tor",
+  "environment_class": "simulation",
+  "release_evidence": false,
+  "tor": "authenticated loopback SOCKS fixture",
+  "topology": ["application", "mock_tor", "mock_private_hops", "controlled_destination"],
+  "capabilities": ["standard", "enhanced-topology", "maximum-topology", "direct-tor-explicit", "deterministic-faults"],
+  "required_evidence": ["json", "junit"],
+  "limitations": ["no real Tor", "no OS TUN", "no TLS proof", "no production performance claims"]
+}

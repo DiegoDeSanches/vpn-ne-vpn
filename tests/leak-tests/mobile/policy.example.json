@@ -1,0 +1,11 @@
+{
+  "allowed_physical_cidrs": [
+    "192.0.2.10/32",
+    "2001:db8:100::10/128"
+  ],
+  "forbidden_utf8": [
+    "TEST-ONLY-CAPABILITY-TOKEN",
+    "direct-destination.test"
+  ]
+}
+

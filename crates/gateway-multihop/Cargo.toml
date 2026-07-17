@@ -1,0 +1,30 @@
+[package]
+name = "onionroute-gateway-multihop"
+version = "0.1.0"
+description = "Experimental fail-closed Enhanced-mode inter-gateway transport"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Standalone until the protected root workspace change is approved.
+[workspace]
+members = ["."]
+resolver = "2"
+
+[dependencies]
+async-trait = "=0.1.80"
+getrandom = "=0.2.15"
+onionroute-gateway-protocol = { path = "../gateway-protocol" }
+prost = "=0.12.6"
+rustls = { version = "=0.23.27", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "=2.1.2"
+sha2 = "=0.10.8"
+tempfile = "=3.10.1"
+thiserror = "=1.0.61"
+tokio = { version = "=1.37.0", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = { version = "=0.26.2", default-features = false, features = ["ring"] }
+zeroize = "=1.8.1"
+
+[dev-dependencies]
+rcgen = "=0.13.1"
+time = "=0.3.36"

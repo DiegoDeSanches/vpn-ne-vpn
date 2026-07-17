@@ -1,0 +1,70 @@
+syntax = "proto3";
+
+package onionroute.directory.v1;
+
+import "common/v1/common.proto";
+
+// Signature envelope. signature covers exactly:
+// "onionroute-directory-v1\0" || payload.
+message SignedGatewayDirectory {
+  uint32 envelope_version = 1;
+  string signing_key_id = 2;
+  bytes payload = 3;
+  SignatureAlgorithm signature_algorithm = 4;
+  bytes signature = 5;
+}
+
+enum SignatureAlgorithm {
+  SIGNATURE_ALGORITHM_UNSPECIFIED = 0;
+  SIGNATURE_ALGORITHM_ED25519 = 1;
+}
+
+// The decoded form of SignedGatewayDirectory.payload. Verifiers must verify the
+// exact payload bytes before decoding and must not reserialize before checking.
+message GatewayDirectory {
+  onionroute.common.v1.ProtocolVersion format_version = 1;
+  uint64 sequence = 2;
+  onionroute.common.v1.UnixTimestamp issued_at = 3;
+  onionroute.common.v1.UnixTimestamp valid_until = 4;
+  repeated GatewayDescriptor gateways = 5;
+  repeated DirectorySigningKey next_signing_keys = 6;
+}
+
+message GatewayDescriptor {
+  string gateway_id = 1;
+  string country_code = 2;
+  repeated GatewayRole roles = 3;
+  // A 56-character Tor v3 service id without a URL scheme or port.
+  string onion_service_id = 4;
+  uint32 onion_service_port = 5;
+  repeated onionroute.common.v1.ProtocolVersion gateway_protocols = 6;
+  // SHA-256 of the gateway TLS certificate SPKI used for application-layer TLS.
+  bytes tls_spki_sha256 = 7;
+  repeated string capabilities = 8;
+  CapacityBucket capacity = 9;
+  onionroute.common.v1.UnixTimestamp not_before = 10;
+  onionroute.common.v1.UnixTimestamp not_after = 11;
+}
+
+enum GatewayRole {
+  GATEWAY_ROLE_UNSPECIFIED = 0;
+  GATEWAY_ROLE_ENTRY = 1;
+  GATEWAY_ROLE_RELAY = 2;
+  GATEWAY_ROLE_EXIT = 3;
+}
+
+enum CapacityBucket {
+  CAPACITY_BUCKET_UNSPECIFIED = 0;
+  CAPACITY_BUCKET_LOW = 1;
+  CAPACITY_BUCKET_MEDIUM = 2;
+  CAPACITY_BUCKET_HIGH = 3;
+}
+
+message DirectorySigningKey {
+  string key_id = 1;
+  SignatureAlgorithm algorithm = 2;
+  bytes public_key = 3;
+  onionroute.common.v1.UnixTimestamp not_before = 4;
+  onionroute.common.v1.UnixTimestamp not_after = 5;
+}
+

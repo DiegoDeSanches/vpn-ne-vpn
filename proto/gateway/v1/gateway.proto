@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package onionroute.gateway.v1;
+
+import "common/v1/common.proto";
+import "gateway/v1/handshake.proto";
+import "gateway/v1/stream.proto";
+import "gateway/v1/types.proto";
+
+// One frame is encoded as canonical unsigned-varint length followed by this
+// protobuf message. The absolute encoded-message limit is 64 KiB.
+message GatewayFrame {
+  // Starts at one independently in each direction and increases by exactly one.
+  uint64 sequence = 1;
+  // ClientHello uses the client's highest offered version. Every later frame
+  // uses the explicitly selected version.
+  onionroute.common.v1.ProtocolVersion version = 2;
+  // IDs name semantics that are unsafe to ignore. A peer MUST close the session
+  // if any ID was not enabled during negotiation.
+  repeated uint32 critical_extension_ids = 3 [packed = true];
+  // Empty only on ClientHello. ServerHello and all later frames carry the
+  // server-generated 16-byte ephemeral session ID.
+  bytes session_id = 4;
+
+  oneof body {
+    ClientHello client_hello = 10;
+    ServerHello server_hello = 11;
+    Authenticate authenticate = 12;
+    AuthenticationResult authentication_result = 13;
+    OpenTcpStream open_tcp_stream = 14;
+    TcpStreamOpened tcp_stream_opened = 15;
+    TcpStreamRejected tcp_stream_rejected = 16;
+    Data data = 17;
+    WindowUpdate window_update = 18;
+    HalfClose half_close = 19;
+    CloseStream close_stream = 20;
+    ResolveDomain resolve_domain = 21;
+    ResolveResult resolve_result = 22;
+    RotateSession rotate_session = 23;
+    SessionRotated session_rotated = 24;
+    Ping ping = 25;
+    Pong pong = 26;
+    Error error = 27;
+    GoAway go_away = 28;
+  }
+
+  reserved 5 to 9;
+}
+
+// A redacted machine-readable error. It intentionally has no free-form text.
+message Error {
+  ErrorCode code = 1;
+  onionroute.common.v1.RetryHint retry_hint = 2;
+  bool fatal = 3;
+  // Zero means session scope; otherwise this is a logical stream ID.
+  uint64 stream_id = 4;
+  uint32 retry_after_ms = 5;
+  // Random and local to this trust boundary; never copied from another plane.
+  bytes correlation_id = 6;
+}
+
+// Begins a bounded graceful drain. No new streams at or below the announced
+// last accepted ID may appear after this frame.
+message GoAway {
+  uint64 last_accepted_stream_id = 1;
+  ErrorCode code = 2;
+  uint32 drain_timeout_ms = 3;
+}

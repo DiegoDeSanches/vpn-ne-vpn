@@ -1,0 +1,6 @@
+bucket         = "REPLACE-state-bucket"
+key            = "onionroute/production/platform.tfstate"
+region         = "eu-central-1"
+encrypt        = true
+dynamodb_table = "REPLACE-state-locks"
+

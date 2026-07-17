@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "environment_fingerprint": {
+    "class": "simulation",
+    "os_family": "windows",
+    "architecture": "amd64",
+    "hardware_class": "developer-workstation",
+    "python": "3.12",
+    "profile": "mock-loopback-v1"
+  },
+  "sample_count": 30,
+  "metrics": {
+    "tor_bootstrap_time_ms_p95": 1.807,
+    "connect_time_ms_p95": 3.05,
+    "time_to_first_byte_ms_p95": 3.453,
+    "latency_ms_p95": 7.3,
+    "throughput_mbps_p50": 681.249,
+    "cpu_percent_p95": 129.314,
+    "memory_mb_peak": 6.158,
+    "reconnect_time_ms_p95": 5.969,
+    "rotation_time_ms_p95": 4.236,
+    "simultaneous_streams": 16.0,
+    "gateway_capacity_streams_per_second": 362.502
+  },
+  "unavailable_metrics": {
+    "battery_energy_joules_per_10min": "requires a physical Android/iOS device power harness",
+    "protocol_overhead_percent": "requires application and gateway-v1 wire counters in gateway_lab"
+  },
+  "qualification": "mock baseline only; never valid for product release"
+}

@@ -1,0 +1,7 @@
+DataDirectory /var/lib/tor-client
+SocksPort 127.0.0.1:19050 IsolateSOCKSAuth
+SafeSocks 1
+TestSocks 0
+AvoidDiskWrites 1
+Log notice stdout
+

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=OnionRoute
+Comment=Fail-closed privacy tunnel over Tor and private gateways
+Exec=/usr/bin/onionroute-desktop
+Icon=onionroute
+Terminal=false
+Categories=Network;Security;
+DBusActivatable=false
+

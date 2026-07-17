@@ -1,0 +1,51 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "graphTooltip": 1,
+  "panels": [
+    {
+      "id": 1,
+      "title": "Ready gateways",
+      "type": "stat",
+      "gridPos": {"h": 6, "w": 6, "x": 0, "y": 0},
+      "targets": [{"expr": "sum(onionroute_gateway_ready)", "refId": "A"}]
+    },
+    {
+      "id": 2,
+      "title": "Active session bucket",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 0},
+      "targets": [{"expr": "onionroute_gateway_active_session_bucket", "legendFormat": "{{instance}}", "refId": "A"}]
+    },
+    {
+      "id": 3,
+      "title": "Bandwidth bucket",
+      "type": "timeseries",
+      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 0},
+      "targets": [{"expr": "onionroute_gateway_bandwidth_bucket", "legendFormat": "{{instance}}", "refId": "A"}]
+    },
+    {
+      "id": 4,
+      "title": "Stream error rate",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 0, "y": 6},
+      "targets": [{"expr": "onionroute_gateway_stream_error_rate", "legendFormat": "{{instance}}", "refId": "A"}]
+    },
+    {
+      "id": 5,
+      "title": "Clock drift",
+      "type": "timeseries",
+      "gridPos": {"h": 7, "w": 12, "x": 12, "y": 6},
+      "targets": [{"expr": "onionroute_clock_drift_seconds", "legendFormat": "{{instance}}", "refId": "A"}]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["onionroute", "privacy-safe"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timezone": "utc",
+  "title": "OnionRoute Operations",
+  "uid": "onionroute-ops-v1",
+  "version": 1
+}
+

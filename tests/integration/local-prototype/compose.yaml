@@ -1,0 +1,112 @@
+name: onionroute-local-prototype
+
+x-prototype-image: &prototype-image
+  image: onionroute/local-prototype:dev
+  build:
+    context: ../../..
+    dockerfile: tests/integration/local-prototype/Dockerfile
+
+services:
+  gateway:
+    <<: *prototype-image
+    command: ["serve", "/runtime"]
+    volumes:
+      - runtime:/runtime
+    networks:
+      tor-uplink: {}
+      fixture-egress:
+        ipv4_address: 192.175.48.2
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/onionroute-local-prototype", "healthcheck", "gateway"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  controlled-origin:
+    <<: *prototype-image
+    command: ["origin"]
+    networks:
+      fixture-egress:
+        ipv4_address: 192.175.48.10
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/onionroute-local-prototype", "healthcheck", "origin"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  onion-service:
+    <<: *prototype-image
+    command: ["tor-onion-service"]
+    network_mode: "service:gateway"
+    volumes:
+      - runtime:/runtime
+    depends_on:
+      gateway:
+        condition: service_healthy
+      controlled-origin:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /runtime/onion-service/hostname"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+    restart: "no"
+
+  client-tor:
+    <<: *prototype-image
+    command: ["tor-client"]
+    networks:
+      - tor-uplink
+    ports:
+      - "127.0.0.1:19050:19050"
+      - "127.0.0.1:19091:19091"
+    healthcheck:
+      test: ["CMD-SHELL", "test -r /proc/net/tcp && grep -qi ':4A6A ' /proc/net/tcp"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+    restart: "no"
+
+  probe-server:
+    <<: *prototype-image
+    command: ["probe-server", "/runtime", "0.0.0.0:19091", "127.0.0.1:19050"]
+    network_mode: "service:client-tor"
+    volumes:
+      - runtime:/runtime
+    depends_on:
+      onion-service:
+        condition: service_healthy
+      client-tor:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/onionroute-local-prototype", "healthcheck", "probe-api"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  probe:
+    <<: *prototype-image
+    command: ["probe", "/runtime", "127.0.0.1:19050"]
+    network_mode: "service:client-tor"
+    volumes:
+      - runtime:/runtime
+    depends_on:
+      onion-service:
+        condition: service_healthy
+      client-tor:
+        condition: service_healthy
+    restart: "no"
+
+networks:
+  tor-uplink: {}
+  fixture-egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 192.175.48.0/28
+
+volumes:
+  runtime: {}

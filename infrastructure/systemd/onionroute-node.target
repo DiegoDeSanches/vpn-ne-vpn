@@ -1,0 +1,8 @@
+[Unit]
+Description=OnionRoute hardened node
+Requires=nftables.service onionroute-bootstrap.service onionroute-vault-agent.service onionroute-tor-secret-agent.service tor@default.service onionroute-role.service
+After=nftables.service
+AllowIsolate=yes
+
+[Install]
+WantedBy=multi-user.target

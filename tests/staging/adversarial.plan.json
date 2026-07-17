@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "environment_class": "adversarial",
+  "network_faults": [
+    {"name": "packet-loss", "values_percent": [1, 5, 15, 30, 100]},
+    {"name": "latency", "values_ms": [50, 150, 500, 1500]},
+    {"name": "bandwidth", "values_kbps": [64, 256, 1024, 10000]}
+  ],
+  "process_faults": ["tor-kill", "gateway-kill", "daemon-kill", "ui-kill"],
+  "trust_faults": ["malformed-frame", "expired-certificate", "clock-skew", "unsigned-directory", "revoked-directory", "expired-token"],
+  "dependency_faults": ["dns-failure", "database-outage", "kms-outage", "directory-signing-outage"],
+  "resource_faults": ["disk-full", "memory-pressure"],
+  "safety": ["synthetic destinations only", "no production keys", "isolated victim services", "bounded experiment duration"]
+}

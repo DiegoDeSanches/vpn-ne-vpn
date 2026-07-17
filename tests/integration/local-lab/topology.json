@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "environment_class": "local_lab",
+  "linux_bridge": "orqa-br0",
+  "namespaces": [
+    {"name": "orqa-client", "address": "198.18.0.10/24", "role": "TUN/client/kill-switch"},
+    {"name": "orqa-tor", "address": "198.18.0.20/24", "role": "Mock Tor or private Tor testnet"},
+    {"name": "orqa-gateway", "address": "198.18.0.30/24", "role": "private gateway chain"},
+    {"name": "orqa-fixture", "address": "198.18.0.40/24", "role": "controlled DNS/TCP fixture"}
+  ],
+  "captures": ["client-physical", "tun", "tor", "gateway", "fixture"],
+  "required_tools": ["ip", "tc", "nft", "tshark"],
+  "security_property": "the flat hostile lab makes a direct client-to-fixture route possible; the product kill switch must deny it"
+}

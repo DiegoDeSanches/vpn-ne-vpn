@@ -1,0 +1,13 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # The repository omits the organization prefix from filesystem paths while
+    # retaining it in globally unique protobuf package names.
+    - PACKAGE_DIRECTORY_MATCH
+breaking:
+  use:
+    - FILE

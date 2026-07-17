@@ -1,0 +1,25 @@
+[package]
+name = "onionroute-auth-tokens-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+# Keep cargo-fuzz's native build graph compatible with the repository MSRV.
+cc = "=1.0.98"
+jobserver = "=0.1.31"
+libfuzzer-sys = "0.4"
+onionroute-auth-tokens = { path = ".." }
+
+[[bin]]
+name = "token_decode"
+path = "fuzz_targets/token_decode.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

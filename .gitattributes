@@ -1,0 +1,26 @@
+* text=auto
+
+# Scripts executed on Unix hosts or inside containers must retain LF endings.
+*.sh text eol=lf
+*.py text eol=lf
+*.nft text eol=lf
+*.service text eol=lf
+*.socket text eol=lf
+*.j2 text eol=lf
+Dockerfile text eol=lf
+
+# Native Windows command files retain their conventional endings.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# Never run binary assets through text normalization.
+*.gif binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.webp binary
+*.zip binary
+*.gz binary
+*.xz binary

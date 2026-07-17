@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "modes": ["standard", "enhanced", "maximum", "direct_tor"],
+  "states": ["startup", "connected", "shutdown", "soft_rotation", "hard_rotation", "reconnecting"],
+  "vectors": [
+    {"id": "LEAK-DNS", "stimulus": "A/AAAA and UDP/TCP 53 through system and browser APIs", "required": ["zero_physical_dns", "zero_system_resolver_calls"]},
+    {"id": "LEAK-IPV4", "stimulus": "TCP IPv4 canary", "required": ["zero_direct_destination"]},
+    {"id": "LEAK-IPV6", "stimulus": "IPv6 TCP/UDP, fragments and extension headers", "required": ["ipv6_tunneled_or_blocked", "zero_unapproved_physical_ipv6"]},
+    {"id": "LEAK-WEBRTC", "stimulus": "STUN/ICE candidate gathering", "required": ["zero_physical_stun", "bounded_local_reject"]},
+    {"id": "LEAK-QUIC", "stimulus": "HTTP/3 and UDP/443", "required": ["zero_physical_udp443", "bounded_local_reject"]},
+    {"id": "LEAK-DOH", "stimulus": "approved and unapproved DoH endpoint attempts", "required": ["protected_or_blocked", "zero_direct_destination"]},
+    {"id": "LEAK-DOT", "stimulus": "TCP/853 resolver attempt", "required": ["protected_or_blocked", "zero_direct_destination"]},
+    {"id": "LEAK-APP", "stimulus": "raw socket, helper process and PID reuse fallback", "required": ["zero_direct_destination", "kill_switch_continuous"]},
+    {"id": "LEAK-LAN", "stimulus": "RFC1918, link-local, mDNS and interface-scoped bypass", "required": ["blocked_without_explicit_split_rule", "zero_system_resolver_calls"]},
+    {"id": "LEAK-TRANSITION", "stimulus": "Wi-Fi/cell/Ethernet and v4/v6 route change", "required": ["new_interface_blocked_first", "kill_switch_continuous", "zero_direct_destination"]}
+  ]
+}

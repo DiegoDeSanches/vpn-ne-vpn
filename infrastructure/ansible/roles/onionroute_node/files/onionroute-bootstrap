@@ -1,0 +1,82 @@
+#!/bin/sh
+set -eu
+umask 022
+
+metadata=http://169.254.169.254
+raw=/run/onionroute-bootstrap/node.env.raw
+destination=/run/onionroute-bootstrap/node.env
+
+gcp_get() {
+  curl --fail --silent --show-error --max-time 3 --max-filesize 2048 \
+    -H 'Metadata-Flavor: Google' \
+    "$metadata/computeMetadata/v1/instance/attributes/$1"
+}
+
+if gcp_get onionroute-node-id >/dev/null 2>&1; then
+  detected_cloud=gcp
+  {
+    printf 'ONIONROUTE_NODE_ID=%s\n' "$(gcp_get onionroute-node-id)"
+    printf 'ONIONROUTE_ROLE=%s\n' "$(gcp_get onionroute-role)"
+    printf 'ONIONROUTE_CLOUD=gcp\n'
+    printf 'ONIONROUTE_VAULT_ADDR=%s\n' "$(gcp_get onionroute-vault-addr)"
+    printf 'ONIONROUTE_VAULT_AUTH_ROLE=%s\n' "$(gcp_get onionroute-vault-auth-role)"
+    printf 'ONIONROUTE_SECRET_SCOPE=%s\n' "$(gcp_get onionroute-secret-scope)"
+    printf 'ONIONROUTE_RELEASE_DIGEST=%s\n' "$(gcp_get onionroute-release-digest)"
+    printf 'ONIONROUTE_RELEASE_PUBLIC_KEY=%s\n' "$(gcp_get onionroute-release-pubkey)"
+  } > "$raw"
+else
+  detected_cloud=aws
+  token=$(curl --fail --silent --show-error --max-time 3 --max-filesize 1024 \
+    -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' \
+    "$metadata/latest/api/token")
+  curl --fail --silent --show-error --max-time 3 --max-filesize 16384 \
+    -H "X-aws-ec2-metadata-token: $token" \
+    "$metadata/latest/user-data" > "$raw"
+fi
+
+test "$(wc -c < "$raw")" -le 16384
+test "$(wc -l < "$raw")" -eq 8
+
+get_value() {
+  key=$1
+  count=$(grep -c "^$key=" "$raw" || true)
+  test "$count" -eq 1
+  sed -n "s/^$key=//p" "$raw"
+}
+
+node_id=$(get_value ONIONROUTE_NODE_ID)
+role=$(get_value ONIONROUTE_ROLE)
+cloud=$(get_value ONIONROUTE_CLOUD)
+vault_addr=$(get_value ONIONROUTE_VAULT_ADDR)
+vault_role=$(get_value ONIONROUTE_VAULT_AUTH_ROLE)
+secret_scope=$(get_value ONIONROUTE_SECRET_SCOPE)
+release_digest=$(get_value ONIONROUTE_RELEASE_DIGEST)
+release_key=$(get_value ONIONROUTE_RELEASE_PUBLIC_KEY)
+
+case "$node_id" in ''|*[!a-z0-9-]*) exit 64 ;; esac
+[ "${#node_id}" -le 40 ] || exit 64
+case "$role" in entry|exit|relay|directory|token|health-collector|signing|monitoring|management) ;; *) exit 64 ;; esac
+case "$cloud" in aws|gcp) ;; *) exit 64 ;; esac
+test "$cloud" = "$detected_cloud"
+case "$vault_addr" in https://*) ;; *) exit 64 ;; esac
+case "$vault_addr$vault_role$secret_scope" in *[!A-Za-z0-9._:/-]*) exit 64 ;; esac
+case "$vault_role" in ''|*[!A-Za-z0-9._-]*) exit 64 ;; esac
+case "$secret_scope" in kv/data/nodes/*) ;; *) exit 64 ;; esac
+test "$vault_role" = "$node_id"
+test "$secret_scope" = "kv/data/nodes/$node_id"
+printf '%s\n' "$release_digest" | grep -Eq '^sha256:[0-9a-f]{64}$'
+test "$release_key" = /usr/share/onionroute/trust/release-signing.pub
+
+{
+  printf 'ONIONROUTE_NODE_ID=%s\n' "$node_id"
+  printf 'ONIONROUTE_ROLE=%s\n' "$role"
+  printf 'ONIONROUTE_CLOUD=%s\n' "$cloud"
+  printf 'ONIONROUTE_VAULT_ADDR=%s\n' "$vault_addr"
+  printf 'ONIONROUTE_VAULT_AUTH_ROLE=%s\n' "$vault_role"
+  printf 'ONIONROUTE_SECRET_SCOPE=%s\n' "$secret_scope"
+  printf 'ONIONROUTE_RELEASE_DIGEST=%s\n' "$release_digest"
+  printf 'ONIONROUTE_RELEASE_PUBLIC_KEY=%s\n' "$release_key"
+} > "$destination.tmp"
+chmod 0444 "$destination.tmp"
+mv -f "$destination.tmp" "$destination"
+rm -f "$raw"

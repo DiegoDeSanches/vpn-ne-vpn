@@ -1,0 +1,22 @@
+[package]
+name = "onionroute-local-prototype"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# This harness intentionally remains outside every production workspace.
+[workspace]
+
+[dependencies]
+async-trait = "=0.1.80"
+getrandom = "=0.2.15"
+onionroute-gateway-daemon = { path = "../../../crates/gateway-daemon" }
+ring = "=0.17.14"
+rustls = { version = "=0.23.27", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "=2.1.2"
+serde = { version = "=1.0.203", features = ["derive"] }
+serde_json = "=1.0.117"
+sha2 = "=0.10.8"
+subtle = "=2.5.0"
+tokio = { version = "=1.38.0", features = ["full"] }
+tokio-rustls = { version = "=0.26.2", default-features = false, features = ["ring"] }

@@ -1,0 +1,17 @@
+[package]
+name = "onionroute-control-plane-integration"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "Apache-2.0"
+publish = false
+
+[workspace]
+
+[dev-dependencies]
+onionroute-admin-api = { path = "../../../services/admin-api" }
+onionroute-directory-service = { path = "../../../services/directory-service" }
+onionroute-health-collector = { path = "../../../services/health-collector" }
+onionroute-revocation-service = { path = "../../../services/revocation-service" }
+onionroute-signing-service = { path = "../../../services/signing-service" }
+

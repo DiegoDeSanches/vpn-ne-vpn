@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "protocol": "onionroute-gateway-v1",
+  "suites": [
+    {"id": "PC-001", "manifest": "crates/gateway-protocol/Cargo.toml", "test": "framing_conformance", "covers": ["golden-bytes", "incremental-framing", "canonical-length", "bounded-allocation", "version-downgrade", "redaction"]},
+    {"id": "PC-002", "manifest": "crates/gateway-protocol/Cargo.toml", "test": "flow_control", "covers": ["stream-id-lifecycle", "connection-window", "stream-window", "backpressure", "overflow"]},
+    {"id": "PC-003", "manifest": "crates/gateway-protocol/Cargo.toml", "test": "fail_closed", "covers": ["terminal-protocol-error", "session-close"]},
+    {"id": "PC-004", "manifest": "crates/gateway-protocol/Cargo.toml", "test": "privacy_contract", "covers": ["anonymous-auth", "no-identity-diagnostics"]},
+    {"id": "PC-005", "manifest": "crates/gateway-protocol/Cargo.toml", "test": "reference_session", "covers": ["client-server-transcript", "negotiation", "half-close"]},
+    {"id": "PC-006", "manifest": "crates/gateway-daemon/Cargo.toml", "test": "security", "covers": ["token-rejection", "egress-policy", "bounded-input"]},
+    {"id": "PC-007", "manifest": "crates/gateway-daemon/Cargo.toml", "test": "load", "covers": ["session-cap", "stream-cap", "bounded-queue"]}
+  ],
+  "fuzz_targets": [
+    "crates/gateway-protocol/fuzz/fuzz_targets/decode_frame.rs"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "adversarial",
+  "environment_class": "adversarial",
+  "release_evidence": true,
+  "tor": "instrumented private Tor testnet plus hostile peers",
+  "topology": ["hostile_access_network", "instrumented_tor", "malicious_gateway", "fault_proxy", "controlled_destination"],
+  "capabilities": ["malformed-frames", "clock-skew", "expired-certificates", "packet-loss", "latency", "bandwidth", "resource-pressure", "traffic-analysis-lab"],
+  "required_evidence": ["multi-interface-pcap", "bounded-memory-profile", "fault-manifest", "redaction-scan", "security-owner-inventory"],
+  "limitations": ["isolated synthetic traffic only", "traffic-correlation results are residual-risk measurements"]
+}

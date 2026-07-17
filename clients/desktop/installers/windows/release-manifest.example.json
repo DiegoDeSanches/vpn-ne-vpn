@@ -1,0 +1,17 @@
+{
+  "experimental": true,
+  "service_name": "OnionRoute",
+  "pipe": "\\\\.\\pipe\\OnionRoute.Control.v1",
+  "pipe_sddl": "D:P(A;;GA;;;SY)(A;;GRGW;;;OW)",
+  "wintun_version": "PIN_AT_RELEASE",
+  "wintun_sha256": "PIN_AT_RELEASE",
+  "publisher_thumbprint": "PIN_AT_RELEASE",
+  "recovery": {
+    "start": "automatic",
+    "failure_actions": ["restart", "restart", "restart"],
+    "persistent_wfp_block": true,
+    "unknown_intent": "blocked"
+  },
+  "secure_storage": "DPAPI_LOCAL_MACHINE_SERVICE_ACL"
+}
+

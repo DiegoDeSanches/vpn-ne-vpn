@@ -1,0 +1,95 @@
+#!/bin/sh
+set -eu
+umask 027
+
+: "${ONIONROUTE_CLOUD:?missing cloud identity type}"
+: "${ONIONROUTE_VAULT_ADDR:?missing Vault address}"
+: "${ONIONROUTE_VAULT_AUTH_ROLE:?missing Vault auth role}"
+: "${ONIONROUTE_SECRET_SCOPE:?missing Vault secret scope}"
+: "${ONIONROUTE_ROLE:?missing node role}"
+: "${ONIONROUTE_NODE_ID:?missing node ID}"
+
+case "$ONIONROUTE_VAULT_ADDR" in https://*) ;; *) exit 64 ;; esac
+case "$ONIONROUTE_VAULT_AUTH_ROLE" in ''|*[!A-Za-z0-9._-]*) exit 64 ;; esac
+case "$ONIONROUTE_SECRET_SCOPE" in kv/data/nodes/*) ;; *) exit 64 ;; esac
+test "$ONIONROUTE_VAULT_AUTH_ROLE" = "$ONIONROUTE_NODE_ID"
+test "$ONIONROUTE_SECRET_SCOPE" = "kv/data/nodes/$ONIONROUTE_NODE_ID"
+case "$ONIONROUTE_ROLE" in
+  entry|exit|relay|directory|token|health-collector|signing|monitoring|management) ;;
+  *) exit 64 ;;
+esac
+
+config=/run/onionroute/vault-agent-app.hcl
+install -d -m 0750 /run/onionroute/secrets/app /run/onionroute/vault
+
+case "$ONIONROUTE_CLOUD" in
+  aws) auth_type=aws; identity_type=iam ;;
+  gcp) auth_type=gcp; identity_type=gce ;;
+  *) exit 64 ;;
+esac
+
+cat > "$config" <<EOF
+auto_auth {
+  method "$auth_type" {
+    mount_path = "auth/$auth_type"
+    config = {
+      type = "$identity_type"
+      role = "$ONIONROUTE_VAULT_AUTH_ROLE"
+    }
+  }
+}
+template_config {
+  exit_on_retry_failure         = true
+  static_secret_render_interval = "5m"
+}
+vault {
+  retry { num_retries = 5 }
+}
+EOF
+
+write_secret() {
+  secret_name=$1
+  field=$2
+  destination=$3
+  cat >> "$config" <<EOF
+template {
+  destination = "/run/onionroute/secrets/app/$destination"
+  perms       = "0440"
+  contents    = <<EOT
+{{- with secret "$ONIONROUTE_SECRET_SCOPE/$secret_name" -}}
+{{ .Data.data.$field }}
+{{- end -}}
+EOT
+}
+EOF
+}
+
+case "$ONIONROUTE_ROLE" in
+  entry|exit)
+    write_secret gateway-identity certificate gateway-identity.crt
+    write_secret gateway-identity private_key gateway-identity.key
+    write_secret mtls certificate mtls.crt
+    write_secret mtls private_key mtls.key
+    ;;
+  relay|directory|management)
+    write_secret mtls certificate mtls.crt
+    write_secret mtls private_key mtls.key
+    ;;
+  token)
+    write_secret token-signing private_key token-signing.key
+    write_secret token-signing expires_at token-signing.expires-at
+    write_secret mtls certificate mtls.crt
+    write_secret mtls private_key mtls.key
+    ;;
+  signing)
+    write_secret directory-online-signing private_key directory-signing.key
+    write_secret directory-online-signing expires_at directory-signing.expires-at
+    ;;
+  health-collector|monitoring)
+    write_secret monitoring credential monitoring.token
+    write_secret monitoring expires_at monitoring.expires-at
+    ;;
+esac
+
+export VAULT_ADDR=$ONIONROUTE_VAULT_ADDR
+exec /usr/bin/vault agent -config="$config"

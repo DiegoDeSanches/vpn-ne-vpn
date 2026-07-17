@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package onionroute.control.v1;
+
+import "common/v1/common.proto";
+import "directory/v1/directory.proto";
+
+// Authentication and account lookup happen in the control-plane transport and
+// server middleware. They are deliberately absent from all responses usable by
+// the gateway protocol.
+service ControlService {
+  rpc GetGatewayDirectory(GetGatewayDirectoryRequest)
+      returns (GetGatewayDirectoryResponse);
+  rpc MintCapabilityToken(MintCapabilityTokenRequest)
+      returns (MintCapabilityTokenResponse);
+  rpc GetClientPolicy(GetClientPolicyRequest)
+      returns (GetClientPolicyResponse);
+}
+
+message GetGatewayDirectoryRequest {
+  onionroute.common.v1.ProtocolVersionRange supported_formats = 1;
+  uint64 last_seen_sequence = 2;
+}
+
+message GetGatewayDirectoryResponse {
+  onionroute.directory.v1.SignedGatewayDirectory directory = 1;
+}
+
+// The blinded request is produced by the token protocol. Its unblinded token is
+// later presented to a gateway; the control plane cannot derive that token.
+message MintCapabilityTokenRequest {
+  onionroute.common.v1.ProtocolVersion token_protocol = 1;
+  bytes blinded_request = 2;
+  repeated string requested_capabilities = 3;
+}
+
+message MintCapabilityTokenResponse {
+  bytes blind_signature = 1;
+  onionroute.common.v1.UnixTimestamp expires_at = 2;
+  string issuer_key_id = 3;
+}
+
+message GetClientPolicyRequest {
+  onionroute.common.v1.ProtocolVersion policy_format = 1;
+}
+
+message GetClientPolicyResponse {
+  onionroute.common.v1.ProtocolVersion policy_format = 1;
+  uint64 revision = 2;
+  bytes policy_document = 3;
+  bytes signature = 4;
+  string signing_key_id = 5;
+}
+

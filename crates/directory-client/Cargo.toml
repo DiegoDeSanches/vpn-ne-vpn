@@ -1,0 +1,26 @@
+[package]
+name = "onionroute-directory-client"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "Apache-2.0"
+description = "Experimental offline verifier and gateway selector for OnionRoute directory v2"
+
+# This crate is intentionally isolated until CP-0006 is accepted. The protected
+# repository workspace manifest must not be changed by the control/directory team.
+[workspace]
+
+[dependencies]
+base64 = "=0.22.1"
+data-encoding = "=2.6.0"
+ed25519-dalek = { version = "=2.1.1", features = ["rand_core", "zeroize"] }
+semver = "=1.0.23"
+serde = { version = "=1.0.203", features = ["derive"] }
+serde_json = "=1.0.117"
+serde_jcs = "=0.1.0"
+sha2 = "=0.10.8"
+sha3 = "=0.10.8"
+thiserror = "=1.0.61"
+
+[dev-dependencies]
+rand_core = { version = "=0.6.4", features = ["getrandom"] }

@@ -1,0 +1,12 @@
+ClientOnly 1
+SocksPort 0
+ControlPort 0
+DataDirectory /var/lib/onionroute-tor
+
+HiddenServiceDir /var/lib/onionroute-tor/exit-service
+HiddenServiceVersion 3
+HiddenServicePort 443 127.0.0.1:8443
+
+# Configure v3 client authorization through the HiddenServiceDir authorized_clients
+# directory. Keep the hostname and client credentials out of logs and support bundles.
+

@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh fixed-schema OnionRoute platform metrics
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=1m
+RandomizedDelaySec=15s
+AccuracySec=5s
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+

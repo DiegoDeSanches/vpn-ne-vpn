@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "local-integration",
+  "environment_class": "local_lab",
+  "release_evidence": false,
+  "tor": "mock Tor process or isolated private Tor testnet",
+  "topology": ["application_namespace", "platform_tun", "client_core", "tor", "gateway", "fixture_namespace"],
+  "capabilities": ["real-processes", "network-namespaces", "pcap", "route-audit", "fault-proxy"],
+  "required_evidence": ["physical.pcapng", "tun.pcapng", "route-snapshot.json", "process-events.json", "json", "junit"],
+  "limitations": ["single host failure domain", "not proof of public Tor behavior"]
+}

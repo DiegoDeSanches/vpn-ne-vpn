@@ -1,0 +1,33 @@
+[package]
+name = "onionroute-desktop-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Fail-closed desktop daemon orchestration adapters for OnionRoute"
+
+[dependencies]
+async-trait.workspace = true
+getrandom.workspace = true
+onionroute-direct-tor-proxy = { path = "../direct-tor-proxy" }
+onionroute-desktop-ipc = { path = "../ipc" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["io-util", "net", "signal"] }
+
+[target.'cfg(windows)'.dependencies]
+# Tokio 1.40 supports mio 1.0. Pin the audited line so newer raw-dylib
+# toolchain requirements cannot silently enter this Rust 1.78 workspace.
+mio = "=1.0.2"
+windows-sys = { version = "=0.59.0", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+tempfile.workspace = true

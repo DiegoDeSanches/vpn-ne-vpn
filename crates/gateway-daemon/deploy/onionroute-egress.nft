@@ -1,0 +1,62 @@
+#!/usr/sbin/nft -f
+
+table inet onionroute_egress {
+    set forbidden_v4 {
+        type ipv4_addr
+        flags interval
+        elements = {
+            0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8,
+            169.254.0.0/16, 172.16.0.0/12, 192.0.0.0/24,
+            192.0.2.0/24, 192.168.0.0/16, 198.18.0.0/15,
+            198.51.100.0/24, 203.0.113.0/24, 224.0.0.0/4,
+            240.0.0.0/4, 168.63.129.16/32
+        }
+    }
+
+    set forbidden_v6 {
+        type ipv6_addr
+        flags interval
+        elements = { ::/128, ::1/128, fc00::/7, fe80::/10, ff00::/8, 2001:db8::/32 }
+    }
+
+    set dangerous_tcp_ports {
+        type inet_service
+        elements = { 22, 23, 25, 111, 135, 139, 445, 2375, 2376, 3306,
+                     3389, 5432, 5900, 6379, 6443, 9051, 9151, 9200,
+                     11211, 27017 }
+    }
+
+    set dns_v4 {
+        type ipv4_addr
+        elements = { 9.9.9.9, 149.112.112.112 }
+    }
+
+    chain input {
+        type filter hook input priority filter; policy drop;
+        iifname "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+    }
+
+    chain output {
+        type filter hook output priority filter; policy drop;
+        oifname "lo" accept
+        ct state established,related accept
+        ct state invalid drop
+
+        ip daddr @forbidden_v4 drop
+        ip6 daddr @forbidden_v6 drop
+
+        meta skuid "onionroute-gateway" ip daddr @dns_v4 udp dport 53 accept
+        meta skuid "onionroute-gateway" ip daddr @dns_v4 tcp dport 53 accept
+        meta skuid "onionroute-gateway" tcp dport @dangerous_tcp_ports drop
+        meta skuid "onionroute-gateway" tcp accept
+
+        # Dedicated Tor frontend: no UDP and no private/reserved destinations.
+        meta skuid "onionroute-tor" tcp accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+}

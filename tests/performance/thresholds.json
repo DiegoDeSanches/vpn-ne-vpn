@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "policy": "environment-matched baseline plus relative and absolute noise allowance",
+  "minimum_baseline_samples": 30,
+  "metrics": {
+    "tor_bootstrap_time_ms_p95": {"direction": "lower", "relative": 0.30, "absolute": 250.0, "tier": "all"},
+    "connect_time_ms_p95": {"direction": "lower", "relative": 0.25, "absolute": 250.0, "tier": "all"},
+    "time_to_first_byte_ms_p95": {"direction": "lower", "relative": 0.20, "absolute": 100.0, "tier": "all"},
+    "latency_ms_p95": {"direction": "lower", "relative": 0.20, "absolute": 20.0, "tier": "all"},
+    "throughput_mbps_p50": {"direction": "higher", "relative": 0.15, "absolute": 0.0, "tier": "all"},
+    "cpu_percent_p95": {"direction": "lower", "relative": 0.20, "absolute": 5.0, "tier": "all"},
+    "memory_mb_peak": {"direction": "lower", "relative": 0.15, "absolute": 64.0, "tier": "all"},
+    "battery_energy_joules_per_10min": {"direction": "lower", "relative": 0.15, "absolute": 0.0, "tier": "mobile_device"},
+    "simultaneous_streams": {"direction": "higher", "relative": 0.10, "absolute": 0.0, "tier": "gateway_lab"},
+    "reconnect_time_ms_p95": {"direction": "lower", "relative": 0.25, "absolute": 250.0, "tier": "all"},
+    "rotation_time_ms_p95": {"direction": "lower", "relative": 0.25, "absolute": 250.0, "tier": "all"},
+    "gateway_capacity_streams_per_second": {"direction": "higher", "relative": 0.10, "absolute": 0.0, "tier": "gateway_lab"},
+    "protocol_overhead_percent": {"direction": "lower", "relative": 0.10, "absolute": 0.25, "tier": "gateway_lab"}
+  }
+}

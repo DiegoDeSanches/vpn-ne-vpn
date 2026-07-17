@@ -1,0 +1,14 @@
+[Unit]
+Description=OnionRoute authenticated local control socket
+
+[Socket]
+ListenSequentialPacket=/run/onionroute/control-v1.sock
+SocketUser=root
+SocketGroup=onionroute-desktop
+SocketMode=0660
+RemoveOnStop=false
+Service=onionroute.service
+
+[Install]
+WantedBy=sockets.target
+

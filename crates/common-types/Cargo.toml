@@ -1,0 +1,14 @@
+[package]
+name = "onionroute-common-types"
+version = "0.1.0"
+description = "Versioned, platform-neutral OnionRoute component contracts"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[features]
+default = []
+test-utils = []
+
+[dependencies]
+

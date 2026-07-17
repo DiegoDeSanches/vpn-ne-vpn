@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "policy": "floor plus newest approved patch; never infer support from a build succeeding",
+  "platforms": [
+    {"id": "windows-floor-x64", "family": "windows", "floor": "10.0.19041.0", "architecture": "x64", "source": "clients/desktop/apps/windows/OnionRoute.App/OnionRoute.App.csproj", "release_required": true},
+    {"id": "windows-current-arm64", "family": "windows", "floor": "10.0.19041.0", "architecture": "arm64", "source": "clients/desktop/apps/windows/OnionRoute.App/OnionRoute.App.csproj", "release_required": true},
+    {"id": "macos-floor-x64", "family": "macos", "floor": "13.0", "architecture": "x86_64", "source": "clients/desktop/apps/macos/project.yml", "release_required": true},
+    {"id": "macos-current-arm64", "family": "macos", "floor": "13.0", "architecture": "arm64", "source": "clients/desktop/apps/macos/project.yml", "release_required": true},
+    {"id": "android-floor-arm64", "family": "android", "floor": "api-29", "architecture": "arm64-v8a", "source": "clients/android/app/build.gradle.kts", "release_required": true},
+    {"id": "android-target-arm64", "family": "android", "floor": "api-36", "architecture": "arm64-v8a", "source": "clients/android/app/build.gradle.kts", "release_required": true},
+    {"id": "android-emulator", "family": "android", "floor": "api-29", "architecture": "x86_64", "source": "clients/android/app/build.gradle.kts", "release_required": false},
+    {"id": "ios-floor", "family": "ios", "floor": "17.0", "architecture": "arm64", "source": "clients/ios/project.yml", "release_required": true},
+    {"id": "ios-current", "family": "ios", "floor": "17.0", "architecture": "arm64", "source": "clients/ios/project.yml", "release_required": true}
+  ],
+  "network_variants": ["ipv4-only", "dual-stack", "ipv6-only-access", "nat64", "wifi", "ethernet", "cellular", "captive-portal"],
+  "upgrade_paths": ["clean-install", "previous-approved-to-candidate", "candidate-rollback", "reboot-with-tunnel-active"],
+  "protocol_pairs": ["v1-current-client/current-gateway", "v1-oldest-supported-client/current-gateway", "v1-current-client/oldest-supported-gateway", "incompatible-major-reject"],
+  "conditional": [
+    {"family": "linux", "status": "release-blocked-until-supported-distributions-are-approved", "owner": "product/documentation"}
+  ]
+}

@@ -1,0 +1,17 @@
+[package]
+name = "onionroute-packet-engine"
+version = "0.1.0"
+description = "Bounded fail-closed packet and TCP flow engine for OnionRoute"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Temporary standalone workspace until CP-0001 is accepted.
+[workspace]
+
+[dependencies]
+onionroute-common-types = { path = "../common-types" }
+
+[[bench]]
+name = "packet_pipeline"
+harness = false

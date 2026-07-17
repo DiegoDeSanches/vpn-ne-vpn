@@ -1,0 +1,24 @@
+#!/bin/sh
+set -eu
+
+. /run/onionroute-bootstrap/node.env
+: "${ONIONROUTE_RELEASE_DIGEST:?missing release digest}"
+: "${ONIONROUTE_RELEASE_PUBLIC_KEY:?missing release public key}"
+
+manifest=/opt/onionroute/current/release.manifest
+signature=/opt/onionroute/current/release.manifest.sig
+digest_file=/opt/onionroute/current/release.digest
+
+test -r "$manifest"
+test -r "$signature"
+test -r "$digest_file"
+test -r "$ONIONROUTE_RELEASE_PUBLIC_KEY"
+test "$(tr -d '\r\n' < "$digest_file")" = "$ONIONROUTE_RELEASE_DIGEST"
+
+/usr/bin/cosign verify-blob \
+  --key "$ONIONROUTE_RELEASE_PUBLIC_KEY" \
+  --signature "$signature" \
+  "$manifest" >/dev/null
+
+cd /opt/onionroute/current
+/usr/bin/sha256sum --check --strict release.manifest >/dev/null

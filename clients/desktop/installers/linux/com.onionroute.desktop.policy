@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+  "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<policyconfig>
+  <vendor>OnionRoute</vendor>
+  <vendor_url>https://onionroute.invalid</vendor_url>
+  <action id="com.onionroute.desktop.enroll">
+    <description>Enroll the OnionRoute protection service for this desktop user</description>
+    <message>Authentication is required to authorize OnionRoute system protection</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>auth_admin_keep</allow_active></defaults>
+  </action>
+  <action id="com.onionroute.desktop.remove-protection">
+    <description>Remove OnionRoute system protection</description>
+    <message>Removing protection can restore unprotected network access</message>
+    <defaults><allow_any>no</allow_any><allow_inactive>no</allow_inactive><allow_active>auth_admin</allow_active></defaults>
+  </action>
+</policyconfig>
+

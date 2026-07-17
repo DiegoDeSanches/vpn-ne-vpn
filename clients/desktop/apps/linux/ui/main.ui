@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.12"/>
+  <object class="GtkApplicationWindow" id="window">
+    <property name="title">OnionRoute</property>
+    <property name="default-width">1040</property>
+    <property name="default-height">700</property>
+    <child>
+      <object class="GtkBox">
+        <property name="orientation">horizontal</property>
+        <child>
+          <object class="GtkStackSidebar">
+            <property name="stack">screens</property>
+            <property name="width-request">220</property>
+            <property name="accessible-role">navigation</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkSeparator"><property name="orientation">vertical</property></object>
+        </child>
+        <child>
+          <object class="GtkStack" id="screens">
+            <property name="hexpand">true</property>
+            <property name="vexpand">true</property>
+            <property name="transition-type">crossfade</property>
+            <child>
+              <object class="GtkStackPage">
+                <property name="name">home</property><property name="title">Home</property>
+                <property name="child">
+                  <object class="GtkBox">
+                    <property name="orientation">vertical</property><property name="spacing">18</property>
+                    <property name="margin-start">32</property><property name="margin-end">32</property>
+                    <property name="margin-top">32</property><property name="margin-bottom">32</property>
+                    <child><object class="GtkLabel" id="status"><property name="label">Fail-closed: traffic blocked</property><property name="xalign">0</property><property name="css-classes">title-1</property><property name="accessible-role">status</property></object></child>
+                    <child><object class="GtkGrid">
+                      <property name="row-spacing">12</property><property name="column-spacing">30</property>
+                      <child><object class="GtkLabel"><property name="label">Exit country</property><property name="xalign">0</property><layout><property name="column">0</property><property name="row">0</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Automatic</property><property name="xalign">0</property><layout><property name="column">1</property><property name="row">0</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Anonymity mode</property><property name="xalign">0</property><layout><property name="column">0</property><property name="row">1</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Standard</property><property name="xalign">0</property><layout><property name="column">1</property><property name="row">1</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Tor bootstrap</property><property name="xalign">0</property><layout><property name="column">0</property><property name="row">2</property></layout></object></child>
+                      <child><object class="GtkProgressBar"><property name="hexpand">true</property><layout><property name="column">1</property><property name="row">2</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Gateway / latency</property><property name="xalign">0</property><layout><property name="column">0</property><property name="row">3</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Unavailable / not available</property><property name="xalign">0</property><layout><property name="column">1</property><property name="row">3</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Kill switch / blocked leaks</property><property name="xalign">0</property><layout><property name="column">0</property><property name="row">4</property></layout></object></child>
+                      <child><object class="GtkLabel"><property name="label">Engaged / 0</property><property name="xalign">0</property><layout><property name="column">1</property><property name="row">4</property></layout></object></child>
+                    </object></child>
+                    <child><object class="GtkLabel"><property name="label">⚠ Arbitrary UDP is unsupported. QUIC and other UDP are blocked to prevent leaks.</property><property name="wrap">true</property><property name="xalign">0</property></object></child>
+                    <child><object class="GtkBox"><property name="spacing">12</property>
+                      <child><object class="GtkButton" id="connect_button"><property name="label">Connect</property><property name="css-classes">suggested-action</property></object></child>
+                      <child><object class="GtkButton" id="disconnect_button"><property name="label">Disconnect</property></object></child>
+                      <child><object class="GtkButton" id="identity_button"><property name="label">New identity…</property></object></child>
+                    </object></child>
+                  </object>
+                </property>
+              </object>
+            </child>
+            <child><object class="GtkStackPage"><property name="name">country</property><property name="title">Exit country</property><property name="child"><object class="GtkLabel"><property name="label">Country-level exit selection; no city or coordinate precision.</property><property name="wrap">true</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">anonymity</property><property name="title">Anonymity level</property><property name="child"><object class="GtkLabel"><property name="label">Standard: Tor → private exit\nEnhanced: Tor → entry → encrypted transport → exit\nMaximum: Tor → entry → relay → exit\nDirect Tor: Tor → public Tor exit</property><property name="wrap">true</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">route</property><property name="title">Route</property><property name="child"><object class="GtkLabel"><property name="label">Tor → Private exit gateway → Internet\nSpecific Tor relays are intentionally hidden.</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">rotation</property><property name="title">Rotation</property><property name="child"><object class="GtkLabel"><property name="label">Automatic soft rotation\nNew identity requires confirmation and closes active connections.</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">split</property><property name="title">Split tunneling</property><property name="child"><object class="GtkLabel"><property name="label">Application rules are enforced before packets enter TUN.</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">kill-switch</property><property name="title">Kill switch</property><property name="child"><object class="GtkLabel"><property name="label">Fail-closed protection remains active when the UI closes.</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">diagnostics</property><property name="title">Diagnostics</property><property name="child"><object class="GtkLabel"><property name="label">Redacted exports contain coarse allowlisted state and expire automatically.</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">subscription</property><property name="title">Subscription</property><property name="child"><object class="GtkLabel"><property name="label">Subscription status unavailable</property></object></property></object></child>
+            <child><object class="GtkStackPage"><property name="name">settings</property><property name="title">Settings</property><property name="child"><object class="GtkLabel"><property name="label">Launch at login · Connect on launch · Language</property></object></property></object></child>
+          </object>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>
+

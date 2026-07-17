@@ -1,0 +1,27 @@
+[package]
+name = "onionroute-gateway-protocol-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+onionroute-gateway-protocol = { path = ".." }
+# Direct pins keep cargo-fuzz's build chain compatible with the project's Rust
+# 1.78 MSRV; both are otherwise transitive through `cc`/`jobserver`.
+cc = "=1.0.98"
+jobserver = "=0.1.31"
+tempfile = "=3.10.1"
+
+[[bin]]
+name = "decode_frame"
+path = "fuzz_targets/decode_frame.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]

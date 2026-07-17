@@ -1,0 +1,83 @@
+name: onionroute-staging
+
+services:
+  gateway:
+    image: "${OR_GATEWAY_IMAGE:?set a digest-pinned gateway image}"
+    read_only: true
+    cap_drop: ["ALL"]
+    tmpfs:
+      - /run/onionroute:size=16m,mode=0700
+    configs:
+      - source: gateway-config
+        target: /etc/onionroute-gateway/gateway.json
+        mode: 0444
+    secrets:
+      - source: gateway-tls-cert
+        target: /run/secrets/gateway-tls-cert
+      - source: gateway-tls-key
+        target: /run/secrets/gateway-tls-key
+      - source: token-verifier-bundle
+        target: /run/secrets/token-verifier-bundle
+    environment:
+      ONIONROUTE_GATEWAY_CONFIG: /etc/onionroute-gateway/gateway.json
+      ONIONROUTE_TOKEN_VERIFIER_BUNDLE: /run/secrets/token-verifier-bundle
+      RUST_LOG: info
+    networks:
+      - egress
+
+  onion-service:
+    image: "${OR_TOR_IMAGE:?set a digest-pinned C Tor image}"
+    network_mode: "service:gateway"
+    read_only: true
+    cap_drop: ["ALL"]
+    configs:
+      - source: onion-torrc
+        target: /etc/tor/torrc
+        mode: 0444
+    volumes:
+      - onion-service-state:/var/lib/onionroute-tor
+    command: ["tor", "-f", "/etc/tor/torrc"]
+    depends_on:
+      - gateway
+
+  test-runner:
+    image: "${OR_CLIENT_TEST_IMAGE:?set a digest-pinned client test image}"
+    read_only: true
+    cap_drop: ["ALL"]
+    cap_add: ["NET_ADMIN"]
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    tmpfs:
+      - /run/onionroute:size=32m,mode=0700
+      - /test-results:size=256m,mode=0700
+    environment:
+      OR_ENVIRONMENT_CLASS: staging_real_onion
+      OR_DIRECTORY_ENDPOINT: "${OR_DIRECTORY_ENDPOINT:?set the signed staging directory Onion endpoint}"
+      OR_CONTROLLED_FIXTURE: "${OR_CONTROLLED_FIXTURE:?set an externally controlled public fixture}"
+      OR_EXPECTED_GATEWAY_ID: qa-staging-exit-01
+      OR_REPORT_DIRECTORY: /test-results
+    depends_on:
+      - onion-service
+    networks:
+      - access
+
+configs:
+  gateway-config:
+    file: ./gateway.staging.json
+  onion-torrc:
+    file: ./torrc.onion
+
+secrets:
+  gateway-tls-cert:
+    file: "${OR_STAGING_TLS_CERT_FILE:?set the staging TLS certificate path}"
+  gateway-tls-key:
+    file: "${OR_STAGING_TLS_KEY_FILE:?set the staging TLS key path}"
+  token-verifier-bundle:
+    file: "${OR_STAGING_TOKEN_BUNDLE_FILE:?set the signed verifier bundle path}"
+
+volumes:
+  onion-service-state:
+
+networks:
+  access: {}
+  egress: {}

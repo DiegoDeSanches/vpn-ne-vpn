@@ -1,0 +1,19 @@
+#!/usr/sbin/nft -f
+# EXPERIMENTAL recovery policy. Package post-install substitutes the numeric
+# service UID after validating it and loads this file atomically.
+table inet onionroute {
+  chain output {
+    type filter hook output priority -200; policy drop;
+    oifname "lo" accept
+    ct state established,related accept
+    meta skuid ONIONROUTE_SERVICE_UID tcp accept
+    meta skuid ONIONROUTE_SERVICE_UID udp dport 53 drop
+    udp dport 443 counter drop comment "block QUIC"
+    udp counter drop comment "TCP-only MVP"
+    counter drop comment "fail-closed unprotected output"
+  }
+  chain input {
+    type filter hook input priority -200; policy accept;
+  }
+}
+

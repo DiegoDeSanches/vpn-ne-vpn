@@ -1,0 +1,4 @@
+d /run/onionroute 0750 onionroute onionroute-desktop -
+d /var/lib/onionroute 0700 onionroute onionroute -
+d /var/lib/onionroute/diagnostics 0700 onionroute onionroute 7d
+

@@ -1,0 +1,105 @@
+syntax = "proto3";
+
+package onionroute.gateway.v1;
+
+import "common/v1/common.proto";
+import "gateway/v1/types.proto";
+
+message Destination {
+  oneof value {
+    // ASCII/IDNA A-label, at most 253 bytes. Never written to ordinary logs.
+    string hostname = 1;
+    // Network-order 4 or 16 bytes. Never written to ordinary logs.
+    bytes ip_address = 2;
+  }
+}
+
+message OpenTcpStream {
+  // Client-created, odd, strictly increasing, and never reused in a session.
+  uint64 stream_id = 1;
+  Destination destination = 2;
+  uint32 destination_port = 3;
+  uint32 timeout_ms = 4;
+  // Bit 0: require IPv4; bit 1: require IPv6. All other bits are critical and
+  // rejected in v1. Both bits set is invalid.
+  uint32 policy_flags = 5;
+  // Credit granted to the gateway for gateway-to-client Data on this stream.
+  uint32 initial_receive_window = 6;
+}
+
+message TcpStreamOpened {
+  uint64 stream_id = 1;
+  // Credit granted to the client for client-to-gateway Data on this stream.
+  uint32 initial_receive_window = 2;
+}
+
+message TcpStreamRejected {
+  uint64 stream_id = 1;
+  ErrorCode error_code = 2;
+  onionroute.common.v1.RetryHint retry_hint = 3;
+}
+
+message Data {
+  uint64 stream_id = 1;
+  // At most 32 KiB and charged to stream plus connection windows.
+  bytes payload = 2;
+}
+
+message WindowUpdate {
+  // Zero updates the connection window; otherwise updates one stream window.
+  uint64 stream_id = 1;
+  uint32 credit = 2;
+}
+
+// The sender will emit no more Data for this stream, but continues receiving.
+message HalfClose {
+  uint64 stream_id = 1;
+}
+
+// Cancels or finally disposes a stream in both directions.
+message CloseStream {
+  uint64 stream_id = 1;
+  CloseCode code = 2;
+}
+
+message ResolveDomain {
+  // Client-created, odd, strictly increasing, and never reused.
+  uint64 query_id = 1;
+  string hostname = 2;
+  AddressFamily address_family = 3;
+  uint32 timeout_ms = 4;
+}
+
+message ResolveResult {
+  uint64 query_id = 1;
+  ErrorCode error_code = 2;
+  // At most 16 entries, each exactly 4 or 16 network-order bytes.
+  repeated bytes ip_addresses = 3;
+  uint32 minimum_ttl_seconds = 4;
+}
+
+// Rotation is make-before-break: this requests a replacement transport and
+// never resets stream IDs or sequence numbers on the current transport.
+message RotateSession {
+  bytes rotation_nonce = 1;
+  RotationReason reason = 2;
+  uint32 drain_timeout_ms = 3;
+}
+
+message SessionRotated {
+  bytes rotation_nonce = 1;
+  bool accepted = 2;
+  ErrorCode error_code = 3;
+  // Always true in v1 when accepted. The replacement session performs a new
+  // hello/auth handshake with fresh nonces and a fresh ephemeral session ID.
+  bool replacement_transport_required = 4;
+}
+
+message Ping {
+  // 8..32 opaque random bytes; never treated as a stable identifier.
+  bytes nonce = 1;
+}
+
+message Pong {
+  bytes nonce = 1;
+}

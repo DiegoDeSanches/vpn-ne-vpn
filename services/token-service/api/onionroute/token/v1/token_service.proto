@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package onionroute.token.v1;
+
+// CONTRACT CANDIDATE: canonical placement in proto/ requires acceptance of
+// docs/contract-proposals/CP-0007-auth-token-v1.md.
+//
+// Account authentication is transport middleware. There is deliberately no
+// account, e-mail, payment, order, or persistent device field in this API.
+service AccountTokenService {
+  rpc MintTokenBatch(MintTokenBatchRequest) returns (MintTokenBatchResponse);
+}
+
+message MintTokenBatchRequest {
+  uint32 token_protocol_version = 1;
+  // One fresh Ed25519 public key for each token; 1..8 entries, each 32 bytes.
+  repeated bytes proof_of_possession_public_keys = 2;
+  // Every token in the batch is scoped to exactly one private-hop role.
+  GatewayRoleV1 gateway_role = 3;
+}
+
+message MintTokenBatchResponse {
+  // Opaque SignedCapabilityTokenEnvelopeV1 values, each at most 4096 bytes.
+  repeated bytes capability_tokens = 1;
+  int64 not_before_unix_seconds = 2;
+  int64 expires_at_unix_seconds = 3;
+}
+
+// The exact signed MVP envelope. The signature is Ed25519 over `claims` bytes.
+// Decoders must reject a non-canonical protobuf representation.
+message SignedCapabilityTokenEnvelopeV1 {
+  uint32 token_version = 1;
+  bytes claims = 2;
+  bytes signature = 3;
+}
+
+message CapabilityClaimsV1 {
+  uint32 token_version = 1;
+  bytes random_token_id = 2;
+  PlanClassV1 plan_class = 3;
+  repeated GatewayRoleV1 allowed_gateway_roles = 4;
+  RegionSetV1 allowed_region_set = 5;
+  DeviceSlotClassV1 device_slot_class = 6;
+  BandwidthClassV1 bandwidth_class = 7;
+  ConnectionLimitsV1 connection_limits = 8;
+  int64 not_before_unix_seconds = 9;
+  int64 expires_at_unix_seconds = 10;
+  string issuer_key_id = 11;
+  optional bytes proof_of_possession_public_key = 12;
+}
+
+message ConnectionLimitsV1 {
+  uint32 max_active_sessions = 1;
+  uint32 max_concurrent_streams = 2;
+  uint32 new_connections_per_minute = 3;
+}
+
+enum PlanClassV1 {
+  PLAN_CLASS_V1_UNSPECIFIED = 0;
+  PLAN_CLASS_V1_BASIC = 1;
+  PLAN_CLASS_V1_PLUS = 2;
+  PLAN_CLASS_V1_PREMIUM = 3;
+}
+
+enum GatewayRoleV1 {
+  GATEWAY_ROLE_V1_UNSPECIFIED = 0;
+  GATEWAY_ROLE_V1_ENTRY = 1;
+  GATEWAY_ROLE_V1_RELAY = 2;
+  GATEWAY_ROLE_V1_EXIT = 3;
+}
+
+enum RegionSetV1 {
+  REGION_SET_V1_UNSPECIFIED = 0;
+  REGION_SET_V1_EUROPE = 1;
+  REGION_SET_V1_AMERICAS = 2;
+  REGION_SET_V1_ASIA_PACIFIC = 3;
+  REGION_SET_V1_GLOBAL = 4;
+}
+
+enum DeviceSlotClassV1 {
+  DEVICE_SLOT_CLASS_V1_UNSPECIFIED = 0;
+  DEVICE_SLOT_CLASS_V1_SINGLE = 1;
+  DEVICE_SLOT_CLASS_V1_PERSONAL = 2;
+  DEVICE_SLOT_CLASS_V1_FAMILY = 3;
+}
+
+enum BandwidthClassV1 {
+  BANDWIDTH_CLASS_V1_UNSPECIFIED = 0;
+  BANDWIDTH_CLASS_V1_STANDARD = 1;
+  BANDWIDTH_CLASS_V1_FAST = 2;
+  BANDWIDTH_CLASS_V1_PRIORITY = 3;
+}

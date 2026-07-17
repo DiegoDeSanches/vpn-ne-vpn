@@ -1,0 +1,312 @@
+<Window
+    x:Class="OnionRoute.App.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d"
+    Title="OnionRoute">
+  <Grid Background="{ThemeResource ApplicationPageBackgroundThemeBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition />
+    </Grid.RowDefinitions>
+    <InfoBar x:Name="PrototypeBoundaryBar"
+             Grid.Row="0"
+             IsOpen="False"
+             Visibility="Collapsed"
+             IsClosable="False"
+             Severity="Warning"
+             Title="Direct Tor user-mode prototype"
+             Message="Only applications explicitly using the local proxy are covered. This build does not capture or protect other Windows traffic."
+             AutomationProperties.LiveSetting="Polite" />
+    <NavigationView x:Name="Navigation"
+                    Grid.Row="1"
+                    IsBackButtonVisible="Collapsed"
+                    IsSettingsVisible="False"
+                    PaneDisplayMode="Left"
+                    SelectionChanged="Navigation_SelectionChanged"
+                    AutomationProperties.Name="OnionRoute navigation">
+      <NavigationView.MenuItems>
+        <NavigationViewItem x:Name="HomeNavigationItem" Content="Home" Tag="home" Icon="Home" />
+        <NavigationViewItem Content="Exit country" Tag="country" Icon="World" />
+        <NavigationViewItem Content="Anonymity level" Tag="anonymity" Icon="ProtectedDocument" />
+        <NavigationViewItem Content="Route" Tag="route" Icon="Map" />
+        <NavigationViewItem Content="Rotation" Tag="rotation" Icon="Sync" />
+        <NavigationViewItem Content="Split tunneling" Tag="split" Icon="Switch" />
+        <NavigationViewItem Content="Kill switch" Tag="killswitch" Icon="Permissions" />
+        <NavigationViewItem Content="Diagnostics" Tag="diagnostics" Icon="Repair" />
+        <NavigationViewItem Content="Subscription" Tag="subscription" Icon="Contact" />
+        <NavigationViewItem Content="Settings" Tag="settings" Icon="Setting" />
+      </NavigationView.MenuItems>
+
+      <NavigationView.Content>
+        <Grid>
+          <ScrollViewer x:Name="HomePage" VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Home" FontSize="32" FontWeight="SemiBold" />
+
+              <InfoBar x:Name="ServiceStatusBar"
+                       IsOpen="True"
+                       IsClosable="False"
+                       Severity="Error"
+                       Title="Protection service unavailable"
+                       Message="The Windows daemon is not installed. Control requests remain fail-closed."
+                       AutomationProperties.LiveSetting="Assertive" />
+
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Ellipse Width="14" Height="14" Fill="{StaticResource OnionAccentBrush}" />
+                <StackPanel>
+                  <TextBlock x:Name="StatusText"
+                             Text="State unknown — fail closed"
+                             FontSize="28"
+                             FontWeight="SemiBold"
+                             AutomationProperties.LiveSetting="Assertive"
+                             AutomationProperties.Name="OnionRoute protection status" />
+                  <TextBlock x:Name="StatusDetailText"
+                             Text="No verified state has been received from the protection service."
+                             Opacity=".72"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </StackPanel>
+
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <Grid ColumnSpacing="28" RowSpacing="14">
+                  <Grid.ColumnDefinitions><ColumnDefinition /><ColumnDefinition /></Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition /><RowDefinition /><RowDefinition /><RowDefinition />
+                  </Grid.RowDefinitions>
+                  <TextBlock Grid.Row="0" Text="Exit country" Opacity=".7" />
+                  <TextBlock x:Name="ExitCountryValue" Grid.Row="0" Grid.Column="1"
+                             Text="Unavailable" FontWeight="SemiBold" />
+                  <TextBlock Grid.Row="1" Text="Anonymity mode" Opacity=".7" />
+                  <TextBlock x:Name="AnonymityModeValue" Grid.Row="1" Grid.Column="1"
+                             Text="Unavailable" FontWeight="SemiBold" />
+                  <TextBlock Grid.Row="2" Text="Tor bootstrap" Opacity=".7" />
+                  <ProgressBar x:Name="TorBootstrapProgress" Grid.Row="2" Grid.Column="1"
+                               Value="0" Maximum="100"
+                               AutomationProperties.Name="Tor bootstrap" />
+                  <TextBlock Grid.Row="3" Text="Gateway / latency" Opacity=".7" />
+                  <TextBlock x:Name="GatewayValue" Grid.Row="3" Grid.Column="1"
+                             Text="Unavailable" FontWeight="SemiBold" />
+                </Grid>
+              </Border>
+
+              <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition /><ColumnDefinition /><ColumnDefinition />
+                </Grid.ColumnDefinitions>
+                <Border Padding="16" CornerRadius="12"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                  <StackPanel>
+                    <TextBlock Text="Kill switch" Opacity=".7" />
+                    <TextBlock x:Name="KillSwitchValue" Text="Unverified" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Padding="16" CornerRadius="12"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                  <StackPanel>
+                    <TextBlock Text="Blocked leaks" Opacity=".7" />
+                    <TextBlock x:Name="BlockedLeaksValue" Text="Unavailable" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+                <Border Grid.Column="2" Padding="16" CornerRadius="12"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                  <StackPanel>
+                    <TextBlock Text="UDP" Opacity=".7" />
+                    <TextBlock x:Name="UdpValue" Text="Blocked by policy" FontWeight="SemiBold" />
+                  </StackPanel>
+                </Border>
+              </Grid>
+
+              <InfoBar x:Name="UdpPolicyBar" IsOpen="True" IsClosable="False" Severity="Warning"
+                       Title="UDP is not supported"
+                       Message="QUIC and arbitrary UDP are blocked to prevent leaks. Applications should use TCP."
+                       AutomationProperties.LiveSetting="Polite" />
+
+              <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button x:Name="ConnectButton" Content="Connect" Click="ConnectButton_Click"
+                        Style="{StaticResource AccentButtonStyle}"
+                        AutomationProperties.Name="Connect OnionRoute" />
+                <Button x:Name="DisconnectButton" Content="Disconnect" Click="DisconnectButton_Click"
+                        AutomationProperties.Name="Disconnect OnionRoute" />
+                <Button x:Name="NewIdentityButton" Content="New identity"
+                        Click="NewIdentityButton_Click"
+                        AutomationProperties.HelpText="Closes active connections and clears transient network state" />
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="CountryPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Exit country" FontSize="32" FontWeight="SemiBold" />
+              <TextBlock Text="Country selection is enforced by the protection service and never creates a direct clearnet fallback."
+                         TextWrapping="Wrap" Opacity=".72" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <ComboBox x:Name="CountrySelector" Header="Country-level selection" SelectedIndex="0" HorizontalAlignment="Stretch">
+                    <ComboBoxItem Content="Automatic" />
+                    <ComboBoxItem Content="Germany" />
+                    <ComboBoxItem Content="Netherlands" />
+                    <ComboBoxItem Content="Switzerland" />
+                  </ComboBox>
+                  <TextBlock x:Name="CountryHelpText" Text="Changes require the Windows daemon, which is unavailable in this prototype."
+                             TextWrapping="Wrap" Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="AnonymityPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Anonymity level" FontSize="32" FontWeight="SemiBold" />
+              <TextBlock Text="Choose the route shape. Applying the choice requires a verified daemon session."
+                         TextWrapping="Wrap" Opacity=".72" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <RadioButton x:Name="StandardModeOption" Content="Standard — Tor to one private exit gateway"
+                               GroupName="mode" IsChecked="True" />
+                  <RadioButton x:Name="EnhancedModeOption" Content="Enhanced — Tor, entry gateway, encrypted transport, private exit"
+                               GroupName="mode" />
+                  <RadioButton x:Name="MaximumModeOption" Content="Maximum — Tor, entry, relay and private exit gateways"
+                               GroupName="mode" />
+                  <RadioButton x:Name="DirectTorModeOption" Content="Direct Tor — public Tor exit; no private exit country"
+                               GroupName="mode" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="RoutePage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Route" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <TextBlock x:Name="RouteSummaryText" Text="Tor  →  Private exit gateway  →  Internet"
+                             FontSize="22" TextWrapping="Wrap"
+                             AutomationProperties.Name="Route roles: Tor, private exit gateway, Internet" />
+                  <TextBlock x:Name="RouteHelpText" Text="Live circuit and gateway details will appear after the daemon reports a verified state."
+                             TextWrapping="Wrap" Opacity=".72" />
+                  <TextBlock x:Name="PrototypeProxyEndpointText"
+                             Text="SOCKS5 endpoint: 127.0.0.1:19080 (remote DNS required)"
+                             Visibility="Collapsed"
+                             FontFamily="Consolas"
+                             TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="RotationPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Rotation" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <ToggleSwitch x:Name="AutomaticRotationToggle" Header="Automatic soft rotation" IsOn="True" />
+                  <TextBlock Text="Hard rotation requires confirmation and closes active connections."
+                             TextWrapping="Wrap" />
+                  <Button Content="Create new identity" Click="NewIdentityButton_Click"
+                          IsEnabled="False" HorizontalAlignment="Left" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="SplitPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Split tunneling" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <TextBlock Text="Application rules are enforced before traffic enters the tunnel."
+                             TextWrapping="Wrap" />
+                  <Button Content="Review application rules" IsEnabled="False"
+                          HorizontalAlignment="Left" />
+                  <TextBlock Text="Rule editing becomes available when the protection service is installed."
+                             TextWrapping="Wrap" Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="KillSwitchPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Kill switch" FontSize="32" FontWeight="SemiBold" />
+              <InfoBar x:Name="KillSwitchBoundaryBar" IsOpen="True" IsClosable="False" Severity="Warning"
+                       Title="State is not verified"
+                       Message="The UI cannot claim that Windows Filtering Platform rules are active until the daemon proves it." />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="Policy" Opacity=".7" />
+                  <TextBlock x:Name="KillSwitchPolicyText" Text="Fail closed; no clearnet fallback" FontSize="22" FontWeight="SemiBold" />
+                  <TextBlock Text="Disabling protection is unavailable in the experimental shell."
+                             TextWrapping="Wrap" Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="DiagnosticsPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Diagnostics" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="12">
+                  <TextBlock Text="Exports contain only allowlisted coarse local state and expire automatically."
+                             TextWrapping="Wrap" />
+                  <Button Content="Export redacted diagnostics" IsEnabled="False"
+                          HorizontalAlignment="Left" />
+                  <TextBlock Text="Export requires the protection service." Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="SubscriptionPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Subscription" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                  <TextBlock Text="Status unavailable" FontSize="22" FontWeight="SemiBold" />
+                  <TextBlock Text="Account-plane integration is not connected to the experimental Windows shell."
+                             TextWrapping="Wrap" Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+
+          <ScrollViewer x:Name="SettingsPage" Visibility="Collapsed"
+                        VerticalScrollBarVisibility="Auto">
+            <StackPanel Padding="32" Spacing="20" MaxWidth="900" HorizontalAlignment="Stretch">
+              <TextBlock Text="Settings" FontSize="32" FontWeight="SemiBold" />
+              <Border CornerRadius="16" Padding="24"
+                      Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="16">
+                  <ToggleSwitch Header="Launch at login" IsOn="False" IsEnabled="False" />
+                  <ToggleSwitch Header="Connect on launch" IsOn="False" IsEnabled="False" />
+                  <TextBlock Text="Settings remain local until a verified protection service session is available."
+                             TextWrapping="Wrap" Opacity=".72" />
+                </StackPanel>
+              </Border>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </NavigationView.Content>
+    </NavigationView>
+  </Grid>
+</Window>

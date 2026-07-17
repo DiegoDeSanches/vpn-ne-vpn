@@ -1,0 +1,23 @@
+[package]
+name = "onionroute-gateway-multihop-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+onionroute-gateway-multihop = { path = ".." }
+
+[[bin]]
+name = "decode_inter_gateway_frame"
+path = "fuzz_targets/decode_inter_gateway_frame.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]
+members = ["."]
+

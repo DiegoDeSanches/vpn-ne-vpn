@@ -1,0 +1,22 @@
+#!/usr/bin/python3
+import json
+import pathlib
+import sys
+
+import jsonschema
+
+if len(sys.argv) != 3:
+    raise SystemExit("usage: onionroute-validate-config CONFIG SCHEMA")
+
+config_path = pathlib.Path(sys.argv[1])
+schema_path = pathlib.Path(sys.argv[2])
+if config_path.stat().st_size > 262_144 or schema_path.stat().st_size > 1_048_576:
+    raise SystemExit("configuration or schema exceeds platform size limit")
+
+with config_path.open("r", encoding="utf-8") as source:
+    config = json.load(source)
+with schema_path.open("r", encoding="utf-8") as source:
+    schema = json.load(source)
+
+jsonschema.Draft202012Validator(schema).validate(config)
+

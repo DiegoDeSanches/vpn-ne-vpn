@@ -1,0 +1,16 @@
+[package]
+name = "onionroute-dns-engine"
+version = "0.1.0"
+description = "Synthetic DNS mapping and protected DNS resolver for OnionRoute"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Temporary standalone workspace until CP-0001 is accepted.
+[workspace]
+
+[dependencies]
+onionroute-common-types = { path = "../common-types" }
+
+[dev-dependencies]
+onionroute-common-types = { path = "../common-types", features = ["test-utils"] }

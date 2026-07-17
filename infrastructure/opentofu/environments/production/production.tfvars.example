@@ -1,0 +1,49 @@
+environment    = "production"
+aws_region     = "eu-central-1"
+gcp_region     = "europe-west4"
+gcp_project_id = "onionroute-exit-prod"
+vault_addr     = "https://vault.ops.example.invalid"
+
+aws_nodes = {
+  entry-de-01 = {
+    role                    = "entry"
+    image_id                = "ami-REPLACE-WITH-PINNED-SIGNED-IMAGE"
+    instance_type           = "c7i.large"
+    zone_index              = 0
+    subnet_index            = 10
+    asn                     = 16509
+    admin_domain            = "aws-entry-prod"
+    management_trust_domain = "ops-entry"
+    vault_auth_role         = "entry-de-01"
+    secret_scope            = "kv/data/nodes/entry-de-01"
+    release_digest          = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  }
+  directory-de-01 = {
+    role                    = "directory"
+    image_id                = "ami-REPLACE-WITH-PINNED-SIGNED-IMAGE"
+    instance_type           = "m7i.large"
+    zone_index              = 1
+    subnet_index            = 11
+    asn                     = 16509
+    admin_domain            = "aws-control-prod"
+    management_trust_domain = "ops-control"
+    vault_auth_role         = "directory-de-01"
+    secret_scope            = "kv/data/nodes/directory-de-01"
+    release_digest          = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}
+
+gcp_nodes = {
+  exit-nl-01 = {
+    role                    = "exit"
+    image_id                = "projects/onionroute-images/global/images/onionroute-exit-REPLACE"
+    machine_type            = "c3-standard-4"
+    zone                    = "europe-west4-a"
+    asn                     = 15169
+    admin_domain            = "gcp-exit-prod"
+    management_trust_domain = "ops-exit"
+    vault_auth_role         = "exit-nl-01"
+    secret_scope            = "kv/data/nodes/exit-nl-01"
+    release_digest          = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+  }
+}

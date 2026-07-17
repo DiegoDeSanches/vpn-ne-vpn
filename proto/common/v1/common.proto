@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package onionroute.common.v1;
+
+// A negotiated protocol version. Major changes are wire-incompatible; minor
+// changes are additive and require feature negotiation.
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+// Inclusive version range supported by one peer.
+message ProtocolVersionRange {
+  ProtocolVersion minimum = 1;
+  ProtocolVersion maximum = 2;
+}
+
+// Timestamp independent from protobuf well-known types for small runtimes.
+message UnixTimestamp {
+  int64 seconds = 1;
+}
+
+// A stable machine-readable error safe to expose across a trust boundary.
+message ErrorStatus {
+  string code = 1;
+  ErrorCategory category = 2;
+  RetryHint retry_hint = 3;
+  // A support-safe correlation value generated independently at each boundary.
+  bytes correlation_id = 4;
+}
+
+enum ErrorCategory {
+  ERROR_CATEGORY_UNSPECIFIED = 0;
+  ERROR_CATEGORY_INVALID_INPUT = 1;
+  ERROR_CATEGORY_UNSUPPORTED = 2;
+  ERROR_CATEGORY_UNAVAILABLE = 3;
+  ERROR_CATEGORY_AUTHENTICATION = 4;
+  ERROR_CATEGORY_POLICY = 5;
+  ERROR_CATEGORY_PROTOCOL = 6;
+  ERROR_CATEGORY_RESOURCE_EXHAUSTED = 7;
+  ERROR_CATEGORY_INTERNAL = 8;
+}
+
+enum RetryHint {
+  RETRY_HINT_UNSPECIFIED = 0;
+  RETRY_HINT_NEVER = 1;
+  RETRY_HINT_IMMEDIATE = 2;
+  RETRY_HINT_BACKOFF = 3;
+  RETRY_HINT_AFTER_DIRECTORY_REFRESH = 4;
+  RETRY_HINT_AFTER_TOKEN_REFRESH = 5;
+  RETRY_HINT_USER_ACTION_REQUIRED = 6;
+}
+

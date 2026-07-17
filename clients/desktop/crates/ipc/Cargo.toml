@@ -1,0 +1,16 @@
+[package]
+name = "onionroute-desktop-ipc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Versioned, bounded local IPC contract for OnionRoute desktop"
+
+[dependencies]
+bytes.workspace = true
+prost.workspace = true
+thiserror.workspace = true
+
+[build-dependencies]
+prost-build = "=0.13.3"
+protoc-bin-vendored = "=3.1.0"

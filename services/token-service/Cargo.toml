@@ -1,0 +1,27 @@
+[package]
+name = "onionroute-token-service"
+version = "0.1.0"
+description = "Experimental account-plane token issuance service for OnionRoute"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Standalone until docs/contract-proposals/CP-0007 is accepted.
+[workspace]
+members = ["."]
+resolver = "2"
+
+[dependencies]
+async-trait = "=0.1.80"
+onionroute-auth-tokens = { path = "../../crates/auth-tokens" }
+thiserror = "=1.0.61"
+
+[dev-dependencies]
+ed25519-dalek = "=2.1.1"
+tokio = { version = "=1.37.0", features = ["macros", "rt-multi-thread"] }
+
+[build-dependencies]
+prost-build = "=0.12.6"
+protoc-bin-vendored = "=3.0.0"
+# Keep the build graph compatible with the repository's Rust 1.78/toolchain.
+tempfile = "=3.10.1"

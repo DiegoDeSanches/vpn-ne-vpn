@@ -1,0 +1,84 @@
+# Rust build output
+/target/
+**/target/
+
+# .NET, IDE, Gradle, and Python generated files
+**/bin/
+**/obj/
+/.idea/
+/.vs/
+/.vscode/
+**/.gradle/
+**/__pycache__/
+*.py[cod]
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+**/coverage/
+**/.venv/
+**/venv/
+/clients/android/**/build/
+/clients/android/local.properties
+/clients/ios/**/.build/
+
+# Operating-system and editor leftovers
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+*.bak
+*.orig
+
+# Local agent/operator notes; repository-wide guidance lives in AGENTS.md.
+/instructions.txt
+
+# Ephemeral release staging; publish binaries through GitHub Releases.
+/artifacts/
+/test-results/
+
+# Local environment files. Commit only sanitized examples.
+.env
+.env.*
+!.env.example
+!*.env.example
+
+# Private keys, certificates that may bundle private keys, and keystores
+*.key
+*.pem
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.secret
+*.seed
+*.token
+id_rsa
+id_ed25519
+
+# Terraform/OpenTofu local state and secret-bearing variable files
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+!*.tfvars.example
+!*.tfvars.json.example
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Local Vault and cloud credentials
+.vault-token
+vault-token
+vault-password*
+.vault-pass*
+credentials.json
+application_default_credentials.json
+service-account*.json

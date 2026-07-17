@@ -1,0 +1,259 @@
+openapi: 3.1.0
+info:
+  title: OnionRoute Administrator API
+  version: 1.0.0
+  description: >-
+    Dedicated administrator API. This API MUST use a separate ingress, workload,
+    credentials, rate limits, and network policy from the Onion-only client API.
+servers:
+  - url: https://admin.control.internal
+    description: Private operator mTLS ingress; never the client Onion Service
+security:
+  - operatorMtls: []
+paths:
+  /admin/v1/gateways:
+    post:
+      operationId: upsertGateway
+      summary: Create or replace allow-listed public gateway metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GatewayRecord'
+      responses:
+        '204': { description: Gateway metadata stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/v1/countries/{country_code}:
+    put:
+      operationId: upsertCountry
+      summary: Create or replace signed country configuration
+      parameters:
+        - name: country_code
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Z]{2}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CountryConfig' }
+      responses:
+        '204': { description: Country configuration stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/v1/feature-flags/{flag_key}:
+    put:
+      operationId: upsertFeatureFlag
+      summary: Create or replace a non-personalized signed feature rule
+      parameters:
+        - name: flag_key
+          in: path
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9._:-]{1,96}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FeatureFlag' }
+      responses:
+        '204': { description: Feature rule stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/v1/client-version-rules:
+    post:
+      operationId: upsertClientVersionRule
+      summary: Create or replace a platform/channel compatibility rule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ClientVersionRule' }
+      responses:
+        '204': { description: Version rule stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/v1/revocations:
+    post:
+      operationId: revokeGateway
+      summary: Revoke a gateway in subsequent signed directories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GatewayRevocation' }
+      responses:
+        '204': { description: Revocation stored }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /admin/v1/incidents:
+    post:
+      operationId: createIncident
+      summary: Create privacy-minimized operational incident metadata
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/IncidentInput' }
+      responses:
+        '204': { description: Incident created }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /admin/v1/directory-publications:
+    post:
+      operationId: createDirectoryDraft
+      summary: Reserve a monotonic version for the isolated signing pipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [validity_seconds]
+              properties:
+                validity_seconds: { type: integer, minimum: 300, maximum: 21600 }
+      responses:
+        '202':
+          description: Draft reserved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [directory_version, state]
+                properties:
+                  directory_version: { type: integer, format: int64, minimum: 1 }
+                  state: { type: string, const: draft }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    operatorMtls:
+      type: mutualTLS
+      description: >-
+        The ingress authenticates an operator/workload certificate, strips any
+        incoming x-onionroute-admin-subject header, and injects the verified subject.
+  responses:
+    BadRequest: { description: Bounded validation failed }
+    Unauthorized: { description: Operator mTLS identity is absent or unauthorized }
+    Conflict: { description: Resource conflicts with current monotonic state }
+  schemas:
+    GatewayRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - gateway_id
+        - country_code
+        - city_label
+        - region
+        - role
+        - provider_group
+        - autonomous_system
+        - onion_address
+        - capabilities
+        - supported_protocol_versions
+        - minimum_client_version
+        - current_load_bucket
+        - capacity_bucket
+        - health
+        - maintenance_state
+        - abuse_state
+        - public_signing_key
+        - valid_from
+        - valid_until
+      properties:
+        gateway_id: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        country_code: { type: string, pattern: '^[A-Z]{2}$' }
+        city_label: { type: string, minLength: 1, maxLength: 64 }
+        region: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        role: { type: string, enum: [entry, relay, exit] }
+        provider_group: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        autonomous_system: { type: integer, format: int64, minimum: 1, maximum: 4294967295 }
+        onion_address: { type: string, pattern: '^[a-z2-7]{56}\.onion$' }
+        capabilities:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        supported_protocol_versions:
+          type: array
+          minItems: 1
+          maxItems: 16
+          uniqueItems: true
+          items: { type: string, minLength: 1, maxLength: 32 }
+        minimum_client_version: { $ref: '#/components/schemas/Semver' }
+        current_load_bucket: { type: string, enum: [unknown, low, medium, high, saturated] }
+        capacity_bucket: { type: string, enum: [small, medium, large] }
+        health: { type: string, enum: [unknown, healthy, degraded, unhealthy] }
+        maintenance_state: { type: string, enum: [active, draining, maintenance] }
+        abuse_state: { type: string, enum: [active, restricted, blocked] }
+        public_signing_key: { type: string, pattern: '^[A-Za-z0-9_-]{43}$' }
+        valid_from: { type: integer, format: int64 }
+        valid_until: { type: integer, format: int64 }
+    CountryConfig:
+      type: object
+      additionalProperties: false
+      required: [country_code, display_name_key, enabled, supported_profiles]
+      properties:
+        country_code: { type: string, pattern: '^[A-Z]{2}$' }
+        display_name_key: { type: string, pattern: '^[A-Za-z0-9._:-]{1,96}$' }
+        enabled: { type: boolean }
+        supported_profiles:
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items: { type: string, enum: [standard, enhanced, maximum, direct_tor] }
+    FeatureFlag:
+      type: object
+      additionalProperties: false
+      required: [key, enabled]
+      properties:
+        key: { type: string, pattern: '^[A-Za-z0-9._:-]{1,96}$' }
+        enabled: { type: boolean }
+        platform: { $ref: '#/components/schemas/NullablePlatform' }
+        minimum_client_version: { oneOf: [{ $ref: '#/components/schemas/Semver' }, { type: 'null' }] }
+        maximum_client_version: { oneOf: [{ $ref: '#/components/schemas/Semver' }, { type: 'null' }] }
+    ClientVersionRule:
+      type: object
+      additionalProperties: false
+      required: [platform, channel, minimum_supported_version, recommended_version, latest_version]
+      properties:
+        platform: { $ref: '#/components/schemas/Platform' }
+        channel: { type: string, enum: [stable, beta] }
+        minimum_supported_version: { $ref: '#/components/schemas/Semver' }
+        recommended_version: { $ref: '#/components/schemas/Semver' }
+        latest_version: { $ref: '#/components/schemas/Semver' }
+    GatewayRevocation:
+      type: object
+      additionalProperties: false
+      required: [gateway_id, reason_code, revoked_at]
+      properties:
+        gateway_id: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        reason_code: { type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }
+        revoked_at: { type: integer, format: int64 }
+        expires_at: { oneOf: [{ type: integer, format: int64 }, { type: 'null' }] }
+    IncidentInput:
+      type: object
+      additionalProperties: false
+      required: [severity, summary]
+      properties:
+        severity: { type: string, enum: [low, medium, high, critical] }
+        summary:
+          type: string
+          minLength: 1
+          maxLength: 512
+          description: Must not contain traffic contents, destinations, user IPs, or account IDs.
+        gateway_id: { oneOf: [{ type: string, pattern: '^[A-Za-z0-9._:-]{1,64}$' }, { type: 'null' }] }
+    Platform:
+      type: string
+      enum: [windows, macos, linux, android, ios]
+    NullablePlatform:
+      oneOf: [{ $ref: '#/components/schemas/Platform' }, { type: 'null' }]
+    Semver:
+      type: string
+      pattern: '^[0-9]+\.[0-9]+\.[0-9]+(?:[-+][0-9A-Za-z.-]+)?$'
+

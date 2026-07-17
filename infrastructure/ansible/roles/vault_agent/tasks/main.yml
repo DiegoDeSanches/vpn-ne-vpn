@@ -1,0 +1,56 @@
+---
+- name: Verify pinned Vault binary is present
+  ansible.builtin.stat:
+    path: /usr/bin/vault
+  register: onionroute_vault_binary
+
+- name: Refuse an image without the verified secret agent
+  ansible.builtin.assert:
+    that: onionroute_vault_binary.stat.exists
+    fail_msg: The image preparation step must install the pinned, checksum-verified Vault binary.
+
+- name: Create Vault agent account
+  ansible.builtin.user:
+    name: "{{ onionroute_vault_user }}"
+    group: "{{ onionroute_service_group }}"
+    system: true
+    shell: /usr/sbin/nologin
+    create_home: false
+    password_lock: true
+
+- name: Install identity-auth secret agents
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "/usr/local/libexec/{{ item }}"
+    owner: root
+    group: root
+    mode: '0755'
+  loop:
+    - onionroute-vault-agent
+    - onionroute-tor-secret-agent
+
+- name: Install application Vault agent unit
+  ansible.builtin.template:
+    src: "{{ playbook_dir }}/../systemd/onionroute-vault-agent.service.j2"
+    dest: /etc/systemd/system/onionroute-vault-agent.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Install onion-key Vault agent unit
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../systemd/onionroute-tor-secret-agent.service"
+    dest: /etc/systemd/system/onionroute-tor-secret-agent.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Enable secret agents without starting them in the image builder
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: true
+    daemon_reload: true
+  loop:
+    - onionroute-vault-agent.service
+    - onionroute-tor-secret-agent.service
+

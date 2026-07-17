@@ -1,0 +1,11 @@
+[
+  {
+    "targets": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion:9190"],
+    "labels": {"node_id": "exit-nl-01", "role": "exit", "region": "nl", "endpoint": "privacy"}
+  },
+  {
+    "targets": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.onion:9100"],
+    "labels": {"node_id": "exit-nl-01", "role": "exit", "region": "nl", "endpoint": "node"}
+  }
+]
+

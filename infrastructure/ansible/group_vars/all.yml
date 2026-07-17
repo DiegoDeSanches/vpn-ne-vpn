@@ -1,0 +1,43 @@
+---
+onionroute_allowed_roles:
+  - entry
+  - exit
+  - relay
+  - directory
+  - token
+  - health-collector
+  - signing
+  - monitoring
+  - management
+
+onionroute_service_user: "onionroute-{{ onionroute_node_role }}"
+onionroute_service_group: "onionroute-{{ onionroute_node_role }}"
+onionroute_admin_user: onionroute-admin
+onionroute_vault_user: onionroute-vault
+onionroute_release_root: /opt/onionroute/releases
+onionroute_release_link: /opt/onionroute/current
+onionroute_config_root: /etc/onionroute
+onionroute_secret_root: /run/onionroute/secrets
+onionroute_dns_v4:
+  - 9.9.9.9
+  - 149.112.112.112
+onionroute_ntp_v4:
+  - 162.159.200.1
+  - 162.159.200.123
+onionroute_dependency_v4: []
+onionroute_next_hop_v4: []
+onionroute_management_v4: []
+onionroute_next_hop_port: 443
+onionroute_ssh_ca_public_key: /usr/share/onionroute/trust/admin-ssh-ca.pub
+onionroute_release_public_key: /usr/share/onionroute/trust/release-signing.pub
+
+onionroute_role_commands:
+  entry: /opt/onionroute/current/bin/onionroute-entry-gateway --config /etc/onionroute/entry.toml
+  exit: /opt/onionroute/current/bin/onionroute-gateway-daemon /run/onionroute-exit/gateway.json
+  relay: /opt/onionroute/current/bin/onionroute-relay-gateway --config /etc/onionroute/relay.toml
+  directory: /opt/onionroute/current/bin/onionroute-directory-service --config /etc/onionroute/directory.toml
+  token: /opt/onionroute/current/bin/onionroute-token-service --config /etc/onionroute/token.toml
+  health-collector: /opt/onionroute/current/bin/onionroute-health-collector --config /etc/onionroute/health-collector.toml
+  signing: /opt/onionroute/current/bin/onionroute-signing-service --config /etc/onionroute/signing.toml
+  monitoring: /usr/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus --storage.tsdb.retention.time=15d --web.listen-address=127.0.0.1:9090 --web.enable-admin-api=false --web.enable-lifecycle=false
+  management: /opt/onionroute/current/bin/onionroute-management --config /etc/onionroute/management.toml

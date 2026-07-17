@@ -1,0 +1,293 @@
+syntax = "proto3";
+
+package onionroute.desktop.ipc.v1;
+
+// This schema intentionally contains no onion service address, capability token,
+// hostname, IP address, payment identity, or free-form remote error text.
+
+message ProtocolVersion {
+  uint32 major = 1;
+  uint32 minor = 2;
+}
+
+message ProtocolVersionRange {
+  ProtocolVersion minimum = 1;
+  ProtocolVersion maximum = 2;
+}
+
+enum PeerAuthMethod {
+  PEER_AUTH_METHOD_UNSPECIFIED = 0;
+  PEER_AUTH_METHOD_WINDOWS_TOKEN_AND_ACL = 1;
+  PEER_AUTH_METHOD_APPLE_AUDIT_TOKEN_AND_CODE_REQUIREMENT = 2;
+  PEER_AUTH_METHOD_UNIX_PEERCRED_AND_ACL = 3;
+}
+
+enum EventTopic {
+  EVENT_TOPIC_UNSPECIFIED = 0;
+  EVENT_TOPIC_TUNNEL_STATE = 1;
+  EVENT_TOPIC_BOOTSTRAP = 2;
+  EVENT_TOPIC_GATEWAY_HEALTH = 3;
+  EVENT_TOPIC_LEAK_PROTECTION = 4;
+  EVENT_TOPIC_SUBSCRIPTION = 5;
+  EVENT_TOPIC_DIAGNOSTICS = 6;
+}
+
+message Envelope {
+  ProtocolVersion version = 1;
+  // Random per-message correlation identifier; exactly 16 bytes.
+  bytes request_id = 2;
+  // Strictly increasing in each direction. Zero is invalid.
+  uint64 sequence = 3;
+  oneof body {
+    ClientHello client_hello = 10;
+    ServerHello server_hello = 11;
+    Request request = 12;
+    Response response = 13;
+    Event event = 14;
+  }
+}
+
+message ClientHello {
+  ProtocolVersionRange supported_versions = 1;
+  // Ephemeral process nonce; exactly 32 bytes and never persisted.
+  bytes process_nonce = 2;
+  repeated EventTopic requested_topics = 3;
+  // Maximum unacknowledged events, 1..256.
+  uint32 event_window = 4;
+}
+
+message ServerHello {
+  ProtocolVersion selected_version = 1;
+  bytes process_nonce = 2;
+  bytes session_id = 3;
+  PeerAuthMethod peer_auth_method = 4;
+  uint32 event_window = 5;
+}
+
+enum AnonymityMode {
+  ANONYMITY_MODE_UNSPECIFIED = 0;
+  ANONYMITY_MODE_STANDARD = 1;
+  ANONYMITY_MODE_ENHANCED = 2;
+  ANONYMITY_MODE_MAXIMUM = 3;
+  ANONYMITY_MODE_DIRECT_TOR = 4;
+}
+
+enum TunnelPhase {
+  TUNNEL_PHASE_UNSPECIFIED = 0;
+  TUNNEL_PHASE_DISCONNECTED = 1;
+  TUNNEL_PHASE_PREPARING = 2;
+  TUNNEL_PHASE_KILL_SWITCH_ENGAGED = 3;
+  TUNNEL_PHASE_BOOTSTRAPPING_TOR = 4;
+  TUNNEL_PHASE_CONNECTING_GATEWAY = 5;
+  TUNNEL_PHASE_CONNECTED = 6;
+  TUNNEL_PHASE_ROTATING = 7;
+  TUNNEL_PHASE_DEGRADED = 8;
+  TUNNEL_PHASE_BLOCKED = 9;
+  TUNNEL_PHASE_DISCONNECTING = 10;
+  TUNNEL_PHASE_FATAL_ERROR = 11;
+}
+
+enum GatewayStatus {
+  GATEWAY_STATUS_UNSPECIFIED = 0;
+  GATEWAY_STATUS_NOT_APPLICABLE = 1;
+  GATEWAY_STATUS_CONNECTING = 2;
+  GATEWAY_STATUS_HEALTHY = 3;
+  GATEWAY_STATUS_DEGRADED = 4;
+  GATEWAY_STATUS_UNREACHABLE = 5;
+}
+
+enum LatencyBucket {
+  LATENCY_BUCKET_UNSPECIFIED = 0;
+  LATENCY_BUCKET_NOT_AVAILABLE = 1;
+  LATENCY_BUCKET_LOW = 2;
+  LATENCY_BUCKET_MEDIUM = 3;
+  LATENCY_BUCKET_HIGH = 4;
+  LATENCY_BUCKET_VERY_HIGH = 5;
+}
+
+enum KillSwitchState {
+  KILL_SWITCH_STATE_UNSPECIFIED = 0;
+  KILL_SWITCH_STATE_DISABLED = 1;
+  KILL_SWITCH_STATE_ENGAGING = 2;
+  KILL_SWITCH_STATE_ENGAGED = 3;
+  KILL_SWITCH_STATE_VERIFYING = 4;
+  KILL_SWITCH_STATE_FAILED_BLOCKING = 5;
+}
+
+enum RouteRole {
+  ROUTE_ROLE_UNSPECIFIED = 0;
+  ROUTE_ROLE_TOR = 1;
+  ROUTE_ROLE_ENTRY_GATEWAY = 2;
+  ROUTE_ROLE_RELAY_GATEWAY = 3;
+  ROUTE_ROLE_EXIT_GATEWAY = 4;
+  ROUTE_ROLE_PUBLIC_TOR_EXIT = 5;
+}
+
+message StateSnapshot {
+  TunnelPhase phase = 1;
+  // ISO 3166-1 alpha-2 country only. City, IP and coordinates are forbidden.
+  string exit_country_code = 2;
+  AnonymityMode anonymity_mode = 3;
+  uint32 tor_bootstrap_percent = 4;
+  GatewayStatus gateway_status = 5;
+  LatencyBucket latency_bucket = 6;
+  KillSwitchState kill_switch = 7;
+  uint64 blocked_leak_count = 8;
+  bool udp_blocked = 9;
+  repeated RouteRole route_roles = 10;
+  uint64 state_revision = 11;
+}
+
+message Request {
+  // Present only after a daemon-issued confirmation challenge. Exactly 16 bytes.
+  bytes confirmation_id = 1;
+  oneof command {
+    GetStateRequest get_state = 10;
+    ConnectRequest connect = 11;
+    DisconnectRequest disconnect = 12;
+    SetCountryRequest set_country = 13;
+    SetAnonymityModeRequest set_anonymity_mode = 14;
+    RotateRequest rotate = 15;
+    UpdateSplitTunnelingRequest update_split_tunneling = 16;
+    SetKillSwitchRequest set_kill_switch = 17;
+    ExportDiagnosticsRequest export_diagnostics = 18;
+    UpdateSettingsRequest update_settings = 19;
+    SubscribeRequest subscribe = 20;
+    AcknowledgeEventsRequest acknowledge_events = 21;
+  }
+}
+
+message GetStateRequest {}
+message ConnectRequest {}
+message DisconnectRequest { bool keep_kill_switch = 1; }
+
+message CountrySelection {
+  oneof selection {
+    bool automatic = 1;
+    string iso_country_code = 2;
+  }
+}
+
+message SetCountryRequest { CountrySelection country = 1; }
+message SetAnonymityModeRequest { AnonymityMode mode = 1; }
+
+enum RotationKind {
+  ROTATION_KIND_UNSPECIFIED = 0;
+  ROTATION_KIND_SOFT = 1;
+  ROTATION_KIND_HARD_NEW_IDENTITY = 2;
+}
+
+message RotateRequest { RotationKind kind = 1; }
+
+enum SplitRuleMode {
+  SPLIT_RULE_MODE_UNSPECIFIED = 0;
+  SPLIT_RULE_MODE_PROTECTED = 1;
+  SPLIT_RULE_MODE_BYPASS = 2;
+  SPLIT_RULE_MODE_BLOCKED = 3;
+}
+
+message ApplicationRule {
+  // OS-local opaque application identifier. Never exported in diagnostics.
+  string application_id = 1;
+  SplitRuleMode mode = 2;
+}
+
+message UpdateSplitTunnelingRequest { repeated ApplicationRule rules = 1; }
+message SetKillSwitchRequest { bool enabled = 1; }
+message ExportDiagnosticsRequest { uint32 retention_hours = 1; }
+
+message UpdateSettingsRequest {
+  string locale = 1;
+  bool launch_at_login = 2;
+  bool connect_on_launch = 3;
+  uint32 automatic_rotation_minutes = 4;
+}
+
+message SubscribeRequest {
+  repeated EventTopic topics = 1;
+  uint32 event_window = 2;
+}
+
+message AcknowledgeEventsRequest { uint64 through_sequence = 1; }
+
+enum ResponseStatus {
+  RESPONSE_STATUS_UNSPECIFIED = 0;
+  RESPONSE_STATUS_OK = 1;
+  RESPONSE_STATUS_CONFIRMATION_REQUIRED = 2;
+  RESPONSE_STATUS_REJECTED = 3;
+  RESPONSE_STATUS_RETRY_LATER = 4;
+}
+
+enum CriticalAction {
+  CRITICAL_ACTION_UNSPECIFIED = 0;
+  CRITICAL_ACTION_HARD_ROTATION = 1;
+  CRITICAL_ACTION_DISABLE_KILL_SWITCH = 2;
+  CRITICAL_ACTION_DISCONNECT_AND_UNBLOCK = 3;
+  CRITICAL_ACTION_REPLACE_SPLIT_TUNNEL_POLICY = 4;
+}
+
+message ConfirmationRequired {
+  CriticalAction action = 1;
+  bytes confirmation_id = 2;
+  uint32 expires_in_seconds = 3;
+}
+
+message DiagnosticsExportReady {
+  bytes export_id = 1;
+  string file_name = 2;
+  int64 expires_at_unix_seconds = 3;
+  bytes sha256 = 4;
+}
+
+enum ErrorCode {
+  ERROR_CODE_UNSPECIFIED = 0;
+  ERROR_CODE_INVALID_REQUEST = 1;
+  ERROR_CODE_PROTOCOL_INCOMPATIBLE = 2;
+  ERROR_CODE_NOT_AUTHORIZED = 3;
+  ERROR_CODE_CONFIRMATION_EXPIRED = 4;
+  ERROR_CODE_KILL_SWITCH_FAILED = 5;
+  ERROR_CODE_TOR_BOOTSTRAP_FAILED = 6;
+  ERROR_CODE_GATEWAY_UNAVAILABLE = 7;
+  ERROR_CODE_ROTATION_RATE_LIMITED = 8;
+  ERROR_CODE_SUBSCRIPTION_REQUIRED = 9;
+  ERROR_CODE_DAEMON_RECOVERING = 10;
+  ERROR_CODE_INTERNAL_REDACTED = 11;
+}
+
+message Response {
+  ResponseStatus status = 1;
+  ErrorCode error_code = 2;
+  // Random, non-identifying support correlation code; max 16 ASCII chars.
+  string support_code = 3;
+  oneof payload {
+    StateSnapshot state = 10;
+    ConfirmationRequired confirmation = 11;
+    DiagnosticsExportReady diagnostics_export = 12;
+  }
+}
+
+message Event {
+  EventTopic topic = 1;
+  uint64 event_sequence = 2;
+  oneof payload {
+    StateSnapshot state_changed = 10;
+    LeakBlockedEvent leak_blocked = 11;
+    DiagnosticsExportExpired diagnostics_export_expired = 12;
+  }
+}
+
+enum LeakKind {
+  LEAK_KIND_UNSPECIFIED = 0;
+  LEAK_KIND_DNS = 1;
+  LEAK_KIND_IPV6 = 2;
+  LEAK_KIND_QUIC = 3;
+  LEAK_KIND_UNPROTECTED_ROUTE = 4;
+}
+
+message LeakBlockedEvent {
+  LeakKind kind = 1;
+  uint64 aggregate_count = 2;
+}
+
+message DiagnosticsExportExpired { bytes export_id = 1; }
+

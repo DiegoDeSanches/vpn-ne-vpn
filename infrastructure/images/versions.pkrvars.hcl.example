@@ -1,0 +1,35 @@
+node_role      = "exit"
+release_version = "0.1.0"
+release_digest = "sha256:REPLACE_AFTER_RELEASE_BUNDLE_BUILD"
+release_bundle = "artifacts/onionroute-0.1.0.tar.gz"
+release_bundle_signature = "artifacts/onionroute-0.1.0.tar.gz.sig"
+release_public_key = "trust/release-signing.pub"
+admin_ssh_ca_public_key = "trust/admin-ssh-ca.pub"
+
+# UTC snapshot timestamp. Moving Debian mirrors are prohibited.
+debian_snapshot = "20260717T000000Z"
+vault_version   = "REPLACE_PINNED_VERSION"
+vault_sha256    = "REPLACE_64_HEX_SHA256"
+cosign_version  = "REPLACE_PINNED_VERSION"
+cosign_sha256   = "REPLACE_64_HEX_SHA256"
+
+# Exact operational dependencies are baked into the signed image policy.
+dependency_v4 = ["203.0.113.10"]
+next_hop_v4   = []
+management_v4 = ["10.200.0.0/24"]
+dns_v4        = ["9.9.9.9", "149.112.112.112"]
+ntp_v4        = ["162.159.200.1", "162.159.200.123"]
+next_hop_port = 443
+
+aws_region                   = "eu-central-1"
+aws_source_ami               = "ami-REPLACE_PINNED-DEBIAN12"
+aws_subnet_id                = "subnet-REPLACE-PRIVATE-BUILDER"
+aws_builder_instance_profile = "onionroute-image-builder"
+aws_builder_security_group_id = "sg-REPLACE-NO-INGRESS-BUILDER"
+aws_builder_kms_key_id       = "arn:aws:kms:eu-central-1:REPLACE:key/REPLACE"
+
+gcp_project_id              = "onionroute-images"
+gcp_zone                    = "europe-west4-a"
+gcp_source_image            = "projects/debian-cloud/global/images/REPLACE-PINNED-DEBIAN12"
+gcp_subnetwork              = "projects/onionroute-images/regions/europe-west4/subnetworks/image-builder"
+gcp_builder_service_account = "image-builder@onionroute-images.iam.gserviceaccount.com"

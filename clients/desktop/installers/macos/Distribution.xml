@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- EXPERIMENTAL signed/notarized pkg distribution prototype. -->
+<installer-gui-script minSpecVersion="2">
+  <title>OnionRoute</title>
+  <options customize="never" require-scripts="false" hostArchitectures="x86_64,arm64" />
+  <domains enable_localSystem="true" enable_currentUserHome="false" />
+  <choices-outline><line choice="default"><line choice="onionroute" /></line></choices-outline>
+  <choice id="default" />
+  <choice id="onionroute" visible="false">
+    <pkg-ref id="com.onionroute.desktop.pkg" />
+  </choice>
+  <pkg-ref id="com.onionroute.desktop.pkg" version="0.1.0" onConclusion="none">OnionRoute.pkg</pkg-ref>
+</installer-gui-script>
+

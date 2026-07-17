@@ -1,0 +1,76 @@
+[Unit]
+Description=OnionRoute {{ onionroute_node_role }} role
+Documentation=file:///usr/share/doc/onionroute-platform/OPERATIONS.md
+Requires=nftables.service onionroute-bootstrap.service onionroute-vault-agent.service tor@default.service
+After=nftables.service onionroute-bootstrap.service onionroute-vault-agent.service tor@default.service network-online.target
+Wants=network-online.target
+ConditionPathExists=/run/onionroute-bootstrap/node.env
+
+[Service]
+Type=simple
+User={{ onionroute_service_user }}
+Group={{ onionroute_service_group }}
+EnvironmentFile=/run/onionroute-bootstrap/node.env
+Environment=ONIONROUTE_SECRET_DIR={{ onionroute_secret_root }}/app
+ExecStartPre=/usr/local/libexec/onionroute-wait-secret {{ onionroute_secret_root }}/app/{{ onionroute_required_secret }} 90
+{% if onionroute_node_role == 'exit' %}
+ExecStartPre=/usr/local/libexec/onionroute-render-exit-config
+ExecStartPre=/usr/local/libexec/onionroute-validate-config /run/onionroute-exit/gateway.json /usr/share/onionroute/schemas/gateway.schema.json
+{% endif %}
+{% if onionroute_node_role != 'monitoring' %}
+ExecStartPre=/usr/local/libexec/onionroute-verify-release
+{% endif %}
+ExecStart={{ onionroute_role_commands[onionroute_node_role] }}
+ExecReload=/bin/kill -USR1 $MAINPID
+Restart=on-failure
+RestartSec=5s
+StartLimitIntervalSec=300
+StartLimitBurst=5
+TimeoutStartSec=120s
+TimeoutStopSec=330s
+KillSignal=SIGTERM
+
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+SecureBits=noroot-locked
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+{% if onionroute_node_role == 'monitoring' %}
+IPAddressDeny=any
+IPAddressAllow=localhost
+{% endif %}
+UMask=0077
+TasksMax=2048
+MemoryMax={{ onionroute_memory_max | default('1G') }}
+LimitNOFILE=65536
+RuntimeDirectory=onionroute-{{ onionroute_node_role }}
+RuntimeDirectoryMode=0750
+ReadOnlyPaths={{ onionroute_secret_root }}/app /opt/onionroute/current /etc/onionroute
+ReadWritePaths=/run/onionroute-{{ onionroute_node_role }}{% if onionroute_node_role == 'monitoring' %} /var/lib/prometheus{% endif %}
+InaccessiblePaths=/root /home /media /mnt
+AppArmorProfile=onionroute-role
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=onionroute-node.target

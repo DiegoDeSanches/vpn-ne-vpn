@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- EXPERIMENTAL WiX 4 prototype. Release builds require reviewed publisher signing. -->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="OnionRoute" Manufacturer="OnionRoute" Version="0.1.0"
+           UpgradeCode="A6A34D59-BBFA-4C67-93DE-E616EE0A0134"
+           Scope="perMachine" Compressed="yes">
+    <MajorUpgrade DowngradeErrorMessage="A newer OnionRoute version is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Feature Id="Main" Title="OnionRoute" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="INSTALLFOLDER" Name="OnionRoute">
+        <Component Id="Daemon" Guid="2E66D495-1CF7-40F4-9072-208F3671F11F">
+          <File Id="DaemonExe" Source="$(var.PayloadDir)\onionroute-desktop-daemon.exe"
+                KeyPath="yes" Checksum="yes" />
+          <ServiceInstall Id="OnionRouteServiceInstall" Name="OnionRoute"
+                          DisplayName="OnionRoute Protection Service"
+                          Description="Fail-closed OnionRoute packet tunnel and kill switch"
+                          Type="ownProcess" Start="auto" ErrorControl="normal"
+                          Account="LocalSystem" Vital="yes" />
+          <ServiceControl Id="OnionRouteServiceControl" Name="OnionRoute"
+                          Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+          <util:ServiceConfig FirstFailureActionType="restart"
+                              SecondFailureActionType="restart"
+                              ThirdFailureActionType="restart"
+                              RestartServiceDelayInSeconds="5"
+                              ResetPeriodInDays="1" />
+        </Component>
+        <Component Id="WintunPayload" Guid="C96EB1AB-9221-4AF5-AF02-DA64C0FCA6D0">
+          <!-- Exact upstream signed Wintun DLL hash is pinned by the release manifest. -->
+          <File Id="WintunDll" Source="$(var.PayloadDir)\wintun.dll" KeyPath="yes" Checksum="yes" />
+        </Component>
+        <Component Id="DesktopApp" Guid="6CF24375-03E5-4806-8ECD-EEC921EF40F2">
+          <File Id="DesktopExe" Source="$(var.PayloadDir)\OnionRoute.App.exe" KeyPath="yes" Checksum="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+
+    <ComponentGroup Id="ProductComponents">
+      <ComponentRef Id="Daemon" /><ComponentRef Id="WintunPayload" /><ComponentRef Id="DesktopApp" />
+    </ComponentGroup>
+
+    <!-- Service performs Wintun/WFP enrollment so the MSI never loads an unsigned driver itself. -->
+    <CustomAction Id="InstallProtectionComponents" FileRef="DaemonExe"
+                  ExeCommand="--install-platform --require-signed-wintun --install-persistent-wfp-block"
+                  Execute="deferred" Impersonate="no" Return="check" />
+    <CustomAction Id="RollbackProtectionComponents" FileRef="DaemonExe"
+                  ExeCommand="--rollback-platform --keep-emergency-block"
+                  Execute="rollback" Impersonate="no" Return="ignore" />
+    <InstallExecuteSequence>
+      <Custom Action="RollbackProtectionComponents" Before="InstallProtectionComponents" />
+      <Custom Action="InstallProtectionComponents" After="InstallFiles" Condition="NOT Installed" />
+    </InstallExecuteSequence>
+  </Package>
+</Wix>
+

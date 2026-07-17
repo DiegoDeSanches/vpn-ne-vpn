@@ -1,0 +1,26 @@
+[package]
+name = "onionroute-gateway-daemon"
+version = "0.1.0"
+description = "Experimental fail-closed private exit gateway for OnionRoute"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+
+# Standalone until docs/contract-proposals/CP-0003 is accepted.
+[workspace]
+
+[dependencies]
+async-trait = "0.1.80"
+getrandom = "0.2.15"
+ipnet = { version = "2.9.0", features = ["serde"] }
+prost = "0.13.5"
+ring = "0.17.14"
+rustls = { version = "0.23.27", default-features = false, features = ["ring", "std"] }
+rustls-pemfile = "2.1.2"
+serde = { version = "1.0.203", features = ["derive"] }
+serde_json = "1.0.117"
+thiserror = "1.0.61"
+tokio = { version = "1.38.0", features = ["full"] }
+tokio-rustls = { version = "0.26.2", default-features = false, features = ["ring"] }
+# Keep the rustls transitive graph compatible with the repository Rust 1.78 MSRV.
+zeroize = "=1.8.1"

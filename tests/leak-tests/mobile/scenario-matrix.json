@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "platforms": ["android", "ios"],
+  "scenarios": [
+    {"id": "MLT-001", "name": "wifi-to-cellular", "fault": "disable Wi-Fi during active TCP", "required": ["kill_switch_continuous", "no_direct_destination", "dns_protected"]},
+    {"id": "MLT-002", "name": "cellular-to-wifi", "fault": "enable preferred Wi-Fi during active TCP", "required": ["kill_switch_continuous", "no_direct_destination", "dns_protected"]},
+    {"id": "MLT-003", "name": "airplane-mode", "fault": "enable airplane mode for 60 seconds", "required": ["blocked_while_offline", "bounded_reconnect", "no_direct_destination"]},
+    {"id": "MLT-004", "name": "device-sleep", "fault": "lock device for 15 minutes", "required": ["kill_switch_continuous", "resume_health_checked", "no_direct_destination"]},
+    {"id": "MLT-005", "name": "ui-process-kill", "fault": "kill containing UI process", "required": ["tunnel_process_alive", "kill_switch_continuous", "no_direct_destination"]},
+    {"id": "MLT-006", "name": "extension-or-service-restart", "fault": "terminate tunnel process and observe OS recovery", "required": ["restart_observed", "gap_characterized", "no_direct_destination"]},
+    {"id": "MLT-007", "name": "low-memory", "fault": "apply platform memory pressure", "required": ["bounded_memory", "kill_switch_not_shed", "no_direct_destination"]},
+    {"id": "MLT-008", "name": "invalid-catalog", "fault": "serve bad signature, rollback and oversized catalog", "required": ["catalog_rejected", "old_valid_or_blocked", "no_direct_destination"]},
+    {"id": "MLT-009", "name": "expired-token", "fault": "expire every hop token", "required": ["fresh_unlinkable_token_or_blocked", "no_account_id_in_pcap", "no_direct_destination"]},
+    {"id": "MLT-010", "name": "gateway-failover", "fault": "terminate selected exit gateway", "required": ["old_flows_failed", "replacement_health_checked", "no_direct_destination"]},
+    {"id": "MLT-011", "name": "dns-leak", "fault": "issue A, AAAA and TCP DNS queries during reconnect", "required": ["zero_physical_dns", "servfail_or_protected_answer"]},
+    {"id": "MLT-012", "name": "ipv6-leak", "fault": "use IPv6-only and dual-stack access networks", "required": ["zero_unapproved_physical_ipv6", "ipv6_tunneled_or_blocked"]},
+    {"id": "MLT-013", "name": "quic-leak", "fault": "force HTTP/3 and UDP/443 flood", "required": ["zero_physical_udp443", "bounded_local_reject"]}
+  ]
+}
+

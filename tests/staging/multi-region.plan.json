@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "environment_class": "multi_region_staging",
+  "regions": [
+    {"slot": "client", "provider": "SET-ME", "region": "SET-ME", "admin_domain": "SET-ME", "kms_domain": "SET-ME"},
+    {"slot": "entry", "provider": "SET-ME", "region": "SET-ME", "admin_domain": "SET-ME", "kms_domain": "SET-ME"},
+    {"slot": "relay", "provider": "SET-ME", "region": "SET-ME", "admin_domain": "SET-ME", "kms_domain": "SET-ME"},
+    {"slot": "exit", "provider": "SET-ME", "region": "SET-ME", "admin_domain": "SET-ME", "kms_domain": "SET-ME"}
+  ],
+  "hard_constraints": [
+    "entry, relay, and exit use distinct failure domains",
+    "Maximum requires approved independent admin and KMS domains",
+    "all destinations are controlled synthetic fixtures",
+    "no public ingress exposes a gateway listener",
+    "directory and token artifacts use staging-only keys"
+  ],
+  "faults": ["regional-partition", "partial-gateway-outage", "directory-signing-outage", "kms-outage", "database-outage"]
+}

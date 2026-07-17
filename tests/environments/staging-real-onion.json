@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "name": "staging-real-onion",
+  "environment_class": "staging_real_onion",
+  "release_evidence": true,
+  "tor": "real C Tor and a staging-only v3 Onion Service",
+  "topology": ["supported_client_os", "real_tor", "v3_onion_service", "private_exit_gateway", "controlled_internet_fixture"],
+  "capabilities": ["signed-directory", "real-onion", "pinned-tls", "anonymous-token", "kill-switch-pcap", "upgrade-rollback"],
+  "required_evidence": ["signed-directory-digest", "onion-service-key-provenance", "multi-interface-pcap", "route-snapshot", "test-report", "artifact-digests"],
+  "limitations": ["staging keys and destinations only"]
+}
