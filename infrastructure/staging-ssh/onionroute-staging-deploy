@@ -1,0 +1,369 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+umask 077
+
+readonly state_root="/var/lib/onionroute-staging"
+readonly releases_root="$state_root/releases"
+readonly incoming_root="$state_root/incoming"
+readonly current_file="$state_root/current-revision"
+readonly last_accepted_run_file="$state_root/last-accepted-run-id"
+readonly audit_log="/var/log/onionroute-staging-deploy.log"
+readonly allowed_signers="/etc/onionroute-staging/bundle-allowed-signers"
+readonly max_bundle_bytes=536870912
+readonly max_expanded_bytes=2147483648
+
+audit() {
+  local status="$1"
+  printf '%s status=%s revision=%s run_id=%s\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" "$revision" "$run_id" >> "$audit_log"
+}
+
+fail() {
+  echo "$1" >&2
+  audit "failed"
+  exit 1
+}
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "the staging deploy controller must run as root" >&2
+  exit 77
+fi
+
+read -r operation revision bundle_digest run_id extra \
+  <<< "${SSH_ORIGINAL_COMMAND:-}"
+if [[ "$operation" != "deploy" || -n "${extra:-}" ]]; then
+  echo "expected: deploy <revision> <bundle-sha256> <run-id>" >&2
+  exit 64
+fi
+if [[ ! "$revision" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "invalid revision" >&2
+  exit 64
+fi
+if [[ ! "$bundle_digest" =~ ^[0-9a-f]{64}$ ]]; then
+  echo "invalid bundle digest" >&2
+  exit 64
+fi
+if [[ ! "$run_id" =~ ^[1-9][0-9]{0,17}$ ]]; then
+  echo "invalid workflow run id" >&2
+  exit 64
+fi
+
+install -d -m 0700 "$state_root" "$releases_root" "$incoming_root"
+touch "$audit_log"
+chmod 0600 "$audit_log"
+
+exec 9>"$state_root/deploy.lock"
+if ! flock -n 9; then
+  fail "another staging deployment is already running"
+fi
+
+stage_dir="$(mktemp -d "$incoming_root/$revision.XXXXXXXX")"
+bundle_file="$stage_dir/deployment-bundle.tgz"
+cleanup() {
+  if [[ -n "${release_install_dir:-}" && -d "$release_install_dir" ]]; then
+    rm -rf -- "$release_install_dir"
+  fi
+  rm -rf -- "$stage_dir"
+}
+trap cleanup EXIT
+
+dd if=/dev/stdin of="$bundle_file" bs=1M count=513 iflag=fullblock status=none
+bundle_bytes="$(stat -c '%s' "$bundle_file")"
+if [[ "$bundle_bytes" -ge "$max_bundle_bytes" ]]; then
+  fail "deployment bundle exceeds the 512 MiB limit"
+fi
+
+actual_bundle_digest="$(sha256sum "$bundle_file" | awk '{print $1}')"
+if [[ "$actual_bundle_digest" != "$bundle_digest" ]]; then
+  fail "deployment bundle checksum mismatch"
+fi
+
+expected_members="$(
+  printf '%s\n' \
+    0001_control_plane.sql \
+    compose.yaml \
+    control-plane-image.tar \
+    database-roles.sql \
+    manifest.sha256 \
+    manifest.sha256.sig \
+    migrate.sh \
+    revision \
+    run-id |
+    LC_ALL=C sort
+)"
+actual_members="$(timeout 300 tar -tzf "$bundle_file" | LC_ALL=C sort)" ||
+  fail "deployment bundle member listing failed or timed out"
+if [[ "$actual_members" != "$expected_members" ]]; then
+  fail "deployment bundle contains an unexpected member set"
+fi
+if ! timeout 300 tar -tvzf "$bundle_file" |
+  awk -v max="$max_expanded_bytes" '
+    $1 !~ /^-/ { invalid = 1 }
+    { total += $3 }
+    END { exit invalid || total > max }
+  '; then
+  fail "deployment bundle has a non-file member, is oversized, or timed out"
+fi
+
+extract_dir="$stage_dir/extracted"
+install -d -m 0700 "$extract_dir"
+if ! timeout 600 tar \
+  --extract \
+  --gzip \
+  --file "$bundle_file" \
+  --directory "$extract_dir" \
+  --no-same-owner \
+  --no-same-permissions \
+  revision \
+  run-id \
+  manifest.sha256 \
+  manifest.sha256.sig \
+  compose.yaml \
+  migrate.sh \
+  0001_control_plane.sql \
+  database-roles.sql \
+  control-plane-image.tar; then
+  fail "deployment bundle extraction failed or timed out"
+fi
+
+for member in \
+  revision \
+  run-id \
+  manifest.sha256 \
+  manifest.sha256.sig \
+  compose.yaml \
+  migrate.sh \
+  0001_control_plane.sql \
+  database-roles.sql \
+  control-plane-image.tar; do
+  if [[ ! -f "$extract_dir/$member" || -L "$extract_dir/$member" ]]; then
+    fail "deployment bundle member is not a regular file"
+  fi
+done
+
+if [[ ! -r "$allowed_signers" ]]; then
+  fail "server-side bundle signing policy is missing"
+fi
+if ! ssh-keygen -Y verify \
+  -f "$allowed_signers" \
+  -I onionroute-staging-ci \
+  -n onionroute-staging \
+  -s "$extract_dir/manifest.sha256.sig" \
+  < "$extract_dir/manifest.sha256" >/dev/null; then
+  fail "deployment bundle signature verification failed"
+fi
+
+(
+  cd "$extract_dir"
+  sha256sum --check manifest.sha256
+) >/dev/null || fail "deployment manifest verification failed"
+
+bundle_revision="$(tr -d '\r\n' < "$extract_dir/revision")"
+if [[ "$bundle_revision" != "$revision" ]]; then
+  fail "bundle revision does not match the requested revision"
+fi
+bundle_run_id="$(tr -d '\r\n' < "$extract_dir/run-id")"
+if [[ "$bundle_run_id" != "$run_id" ]]; then
+  fail "bundle run id does not match the requested run id"
+fi
+if [[ -s "$last_accepted_run_file" ]]; then
+  last_accepted_run_id="$(tr -d '\r\n' < "$last_accepted_run_file")"
+  if [[ ! "$last_accepted_run_id" =~ ^[1-9][0-9]{0,17}$ ]]; then
+    fail "stored anti-replay run id is invalid"
+  fi
+  if (( 10#$run_id <= 10#$last_accepted_run_id )); then
+    fail "workflow run id was already accepted or is older than server state"
+  fi
+fi
+accepted_run_tmp="$state_root/last-accepted-run-id.tmp"
+printf '%s\n' "$run_id" > "$accepted_run_tmp"
+chmod 0600 "$accepted_run_tmp"
+mv -f -- "$accepted_run_tmp" "$last_accepted_run_file"
+
+for secret_name in \
+  postgres-superuser-password \
+  directory-service-password \
+  health-collector-password \
+  admin-api-password \
+  revocation-service-password; do
+  password_file="/etc/onionroute-staging/secrets/$secret_name"
+  if [[ ! -r "$password_file" ]] ||
+     ! grep -Eq '^[A-Za-z0-9_-]{32,128}$' "$password_file"; then
+    fail "server-side PostgreSQL secret is missing or invalid"
+  fi
+done
+
+release_dir="$releases_root/$revision"
+existing_release=false
+if [[ -d "$release_dir" ]]; then
+  for release_member in \
+    compose.yaml \
+    migrate.sh \
+    0001_control_plane.sql \
+    database-roles.sql \
+    manifest.sha256 \
+    image.env; do
+    if [[ ! -f "$release_dir/$release_member" || -L "$release_dir/$release_member" ]]; then
+      fail "existing release metadata is incomplete"
+    fi
+  done
+  cmp --silent \
+    <(sed '/  run-id$/d' "$extract_dir/manifest.sha256") \
+    <(sed '/  run-id$/d' "$release_dir/manifest.sha256") ||
+    fail "existing release metadata differs for the same revision"
+  existing_release=true
+fi
+
+docker info >/dev/null || fail "Docker daemon is unavailable"
+docker compose version >/dev/null || fail "Docker Compose v2 is unavailable"
+docker load --input "$extract_dir/control-plane-image.tar" >/dev/null ||
+  fail "Docker image import failed"
+
+image_tag="onionroute/control-plane:$revision"
+docker image inspect "$image_tag" >/dev/null || fail "expected image tag is absent after import"
+image_revision="$(docker image inspect \
+  --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+  "$image_tag")"
+if [[ "$image_revision" != "$revision" ]]; then
+  fail "imported image revision label does not match the deployment revision"
+fi
+image_id="$(docker image inspect --format '{{.Id}}' "$image_tag")"
+if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+  fail "imported image does not have an immutable local image id"
+fi
+
+if [[ "$existing_release" == true ]]; then
+  stored_image_id="$(sed -nE 's/^OR_CONTROL_PLANE_IMAGE=(sha256:[0-9a-f]{64})$/\1/p' \
+    "$release_dir/image.env")"
+  if [[ "$stored_image_id" != "$image_id" ]]; then
+    fail "existing release image id differs for the same signed revision"
+  fi
+else
+  release_install_dir="$(mktemp -d "$releases_root/.${revision}.XXXXXXXX")"
+  chmod 0700 "$release_install_dir"
+  install -m 0444 "$extract_dir/compose.yaml" "$release_install_dir/compose.yaml"
+  install -m 0444 "$extract_dir/migrate.sh" "$release_install_dir/migrate.sh"
+  install -m 0444 "$extract_dir/0001_control_plane.sql" \
+    "$release_install_dir/0001_control_plane.sql"
+  install -m 0444 "$extract_dir/database-roles.sql" \
+    "$release_install_dir/database-roles.sql"
+  install -m 0444 "$extract_dir/manifest.sha256" \
+    "$release_install_dir/manifest.sha256"
+  printf 'OR_CONTROL_PLANE_IMAGE=%s\n' "$image_id" \
+    > "$release_install_dir/image.env"
+  chmod 0400 "$release_install_dir/image.env"
+  mv -- "$release_install_dir" "$release_dir"
+  release_install_dir=""
+fi
+
+compose_release() {
+  local target_release="$1"
+  shift
+  docker compose \
+    --project-name onionroute-staging \
+    --env-file "$target_release/image.env" \
+    --file "$target_release/compose.yaml" \
+    "$@"
+}
+
+release_image_id() {
+  sed -nE 's/^OR_CONTROL_PLANE_IMAGE=(sha256:[0-9a-f]{64})$/\1/p' \
+    "$1/image.env"
+}
+
+verify_onion_ingress() {
+  local target_release="$1"
+  compose_release "$target_release" exec -T tor-directory /bin/sh -ec '
+    onion_hostname="$(tr -d "\r\n" < /var/lib/tor-directory/hidden_service/hostname)"
+    printf "%s" "$onion_hostname" | grep -Eq "^[a-z2-7]{56}\\.onion$"
+    attempts=0
+    while [ "$attempts" -lt 8 ]; do
+      status="$(curl \
+        --silent \
+        --show-error \
+        --output /dev/null \
+        --write-out "%{http_code}" \
+        --socks5-hostname 127.0.0.1:29050 \
+        --connect-timeout 15 \
+        --max-time 30 \
+        "http://${onion_hostname}/" 2>/dev/null || true)"
+      if printf "%s" "$status" | grep -Eq "^[1-5][0-9]{2}$"; then
+        exit 0
+      fi
+      attempts=$((attempts + 1))
+      sleep 5
+    done
+    exit 75
+  '
+}
+
+active_image_id="$(release_image_id "$release_dir")"
+if [[ -z "$active_image_id" ]] || ! docker image inspect "$active_image_id" >/dev/null; then
+  fail "release references an unavailable immutable image id"
+fi
+
+compose_release "$release_dir" config --quiet ||
+  fail "Docker Compose configuration validation failed"
+
+previous_revision=""
+if [[ -s "$current_file" ]]; then
+  previous_revision="$(tr -d '\r\n' < "$current_file")"
+  if [[ ! "$previous_revision" =~ ^[0-9a-f]{40}$ ]]; then
+    fail "stored rollback revision is invalid"
+  fi
+  previous_dir="$releases_root/$previous_revision"
+  if [[ ! -d "$previous_dir" ]]; then
+    fail "rollback release metadata is unavailable before migration"
+  fi
+  previous_image_id="$(release_image_id "$previous_dir")"
+  if [[ -z "$previous_image_id" ]] ||
+     ! docker image inspect "$previous_image_id" >/dev/null; then
+    fail "rollback image is unavailable before migration"
+  fi
+fi
+
+deploy_status=0
+set +e
+compose_release "$release_dir" up -d --wait --wait-timeout 120 postgres
+deploy_status=$?
+if [[ "$deploy_status" -eq 0 ]]; then
+  compose_release "$release_dir" --profile migration run --rm migrate
+  deploy_status=$?
+fi
+if [[ "$deploy_status" -eq 0 ]]; then
+  compose_release "$release_dir" up -d --remove-orphans --wait --wait-timeout 300
+  deploy_status=$?
+fi
+if [[ "$deploy_status" -eq 0 ]]; then
+  verify_onion_ingress "$release_dir"
+  deploy_status=$?
+fi
+set -e
+
+if [[ "$deploy_status" -ne 0 ]]; then
+  if [[ -n "$previous_revision" && -d "$releases_root/$previous_revision" ]]; then
+    if [[ -n "$previous_image_id" ]] &&
+       docker image inspect "$previous_image_id" >/dev/null &&
+       compose_release "$previous_dir" up -d --remove-orphans --wait --wait-timeout 300 &&
+       verify_onion_ingress "$previous_dir"; then
+      audit "rolled-back"
+    else
+      audit "rollback-failed"
+    fi
+  else
+    compose_release "$release_dir" stop \
+      directory-service \
+      health-collector \
+      admin-api \
+      revocation-service \
+      tor-directory >/dev/null 2>&1 || true
+  fi
+  fail "staging deployment failed health gates"
+fi
+
+current_tmp="$state_root/current-revision.tmp"
+printf '%s\n' "$revision" > "$current_tmp"
+chmod 0600 "$current_tmp"
+mv -f -- "$current_tmp" "$current_file"
+audit "succeeded"
+echo "staging deployment succeeded for $revision"

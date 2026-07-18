@@ -1,0 +1,44 @@
+# syntax=docker/dockerfile:1.8@sha256:e87caa74dcb7d46cd820352bfea12591f3dba3ddc4285e19c7dcd13359f7cefd
+
+FROM rust:1.78-bookworm@sha256:5907e96b0293eb53bcc8f09b4883d71449808af289862950ede9a0e3cca44ff5 AS builder
+WORKDIR /source
+
+COPY crates/directory-client ./crates/directory-client
+COPY services ./services
+
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo test --locked --workspace --manifest-path services/Cargo.toml
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    cargo build --locked --release --workspace --manifest-path services/Cargo.toml
+
+FROM debian:bookworm-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+
+ARG OR_BUILD_REVISION=unknown
+ARG OR_IMAGE_SOURCE=unknown
+LABEL org.opencontainers.image.title="OnionRoute experimental staging control plane" \
+      org.opencontainers.image.revision="$OR_BUILD_REVISION" \
+      org.opencontainers.image.source="$OR_IMAGE_SOURCE"
+
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y ca-certificates curl gosu netcat-openbsd tor \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd --system --gid 10001 onionroute \
+    && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent \
+        --shell /usr/sbin/nologin onionroute
+
+COPY --from=builder /source/services/target/release/onionroute-directory-service /usr/local/bin/
+COPY --from=builder /source/services/target/release/onionroute-health-collector /usr/local/bin/
+COPY --from=builder /source/services/target/release/onionroute-admin-api /usr/local/bin/
+COPY --from=builder /source/services/target/release/onionroute-revocation-service /usr/local/bin/
+COPY infrastructure/staging/service-entrypoint.sh /usr/local/bin/onionroute-service-entrypoint
+COPY infrastructure/staging/torrc.directory /etc/tor/torrc.directory
+
+RUN chmod 0555 \
+      /usr/local/bin/onionroute-directory-service \
+      /usr/local/bin/onionroute-health-collector \
+      /usr/local/bin/onionroute-admin-api \
+      /usr/local/bin/onionroute-revocation-service \
+      /usr/local/bin/onionroute-service-entrypoint \
+    && chmod 0444 /etc/tor/torrc.directory
+
+ENTRYPOINT ["/usr/local/bin/onionroute-service-entrypoint"]

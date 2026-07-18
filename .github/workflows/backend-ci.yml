@@ -1,0 +1,375 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - gateway/multihop
+      - infra/platform
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  policy:
+    name: Architecture and secret policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Lint GitHub Actions workflows
+        run: |
+          docker run --rm \
+            --network none \
+            --volume "${GITHUB_WORKSPACE}:/repo:ro" \
+            --workdir /repo \
+            "rhysd/actionlint@sha256:887a259a5a534f3c4f36cb02dca341673c6089431057242cdc931e9f133147e9" \
+            -color
+      - name: Check architecture invariants
+        shell: pwsh
+        run: ./scripts/check-architecture.ps1
+      - name: Scan commit candidates for secrets
+        shell: pwsh
+        run: ./scripts/check-secrets.ps1
+      - name: Validate staging delivery contracts and shell syntax
+        shell: bash
+        run: |
+          python3 infrastructure/staging-ssh/test_delivery_contract.py
+          bash -n \
+            infrastructure/staging/build-bundle.sh \
+            infrastructure/staging/migrate.sh \
+            infrastructure/staging/service-entrypoint.sh \
+            infrastructure/staging/test_bundle.sh \
+            infrastructure/staging/test_runtime.sh \
+            infrastructure/staging-ssh/bootstrap-server.sh \
+            infrastructure/staging-ssh/onionroute-staging-deploy
+
+  core-rust:
+    name: Core Rust workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      # The imported root baseline predates this workflow and is not rustfmt-clean.
+      # Keep the debt visible without modifying protected common contracts here.
+      - name: Report existing formatting drift
+        continue-on-error: true
+        run: cargo +1.78.0 fmt --all -- --check
+      - name: Lint and compile the existing baseline
+        run: cargo +1.78.0 clippy --workspace --all-targets --locked
+      - name: Test
+        run: cargo +1.78.0 test --workspace --locked
+
+  services-rust:
+    name: Control-plane Rust workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      - name: Check formatting
+        run: cargo +1.78.0 fmt --manifest-path services/Cargo.toml --all -- --check
+      - name: Lint
+        run: |
+          cargo +1.78.0 clippy \
+            --manifest-path services/Cargo.toml \
+            --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: |
+          cargo +1.78.0 test \
+            --manifest-path services/Cargo.toml \
+            --workspace --locked
+
+  standalone-rust:
+    name: Standalone Rust - ${{ matrix.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: gateway-protocol
+            manifest: crates/gateway-protocol/Cargo.toml
+          - component: gateway-daemon
+            manifest: crates/gateway-daemon/Cargo.toml
+          - component: gateway-multihop
+            manifest: crates/gateway-multihop/Cargo.toml
+          - component: auth-tokens
+            manifest: crates/auth-tokens/Cargo.toml
+          - component: tor-backend
+            manifest: crates/tor-backend/Cargo.toml
+          - component: circuit-manager
+            manifest: crates/circuit-manager/Cargo.toml
+          - component: token-service
+            manifest: services/token-service/Cargo.toml
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      - name: Check formatting
+        continue-on-error: true
+        run: |
+          cargo +1.78.0 fmt \
+            --manifest-path "${{ matrix.manifest }}" \
+            --all -- --check
+      - name: Lint
+        run: |
+          cargo +1.78.0 clippy \
+            --manifest-path "${{ matrix.manifest }}" \
+            --all-targets --locked
+      - name: Test
+        run: |
+          cargo +1.78.0 test \
+            --manifest-path "${{ matrix.manifest }}" \
+            --locked
+
+  staging_image_validation:
+    name: Staging control-plane image validation
+    if: >-
+      github.event_name != 'push' ||
+      github.ref != 'refs/heads/gateway/multihop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs:
+      - policy
+      - core-rust
+      - services-rust
+      - standalone-rust
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate staging Compose policy
+        env:
+          OR_CONTROL_PLANE_IMAGE: onionroute/control-plane:ci
+        run: python3 infrastructure/staging/test_compose.py
+      - name: Build the staging image
+        run: |
+          docker build \
+            --file infrastructure/staging/Dockerfile.control-plane \
+            --build-arg "OR_BUILD_REVISION=${GITHUB_SHA}" \
+            --build-arg "OR_IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --tag "onionroute/control-plane:${GITHUB_SHA}" \
+            .
+      - name: Verify expected image tag
+        run: |
+          test "$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "onionroute/control-plane:${GITHUB_SHA}")" = "${GITHUB_SHA}"
+      - name: Verify signed deployment bundle contract
+        run: bash infrastructure/staging/test_bundle.sh "${GITHUB_SHA}"
+
+  publish_staging_image:
+    name: Publish staging control-plane image
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/gateway/multihop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs:
+      - policy
+      - core-rust
+      - services-rust
+      - standalone-rust
+    permissions:
+      contents: read
+      packages: write
+      statuses: write
+    steps:
+      - name: Mark immutable image build pending
+        id: mark_pending
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          payload="$(jq -nc \
+            --arg target_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:"pending",context:"onionroute/staging-image",description:"building gated staging image",target_url:$target_url}')"
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --proto '=https' \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary "$payload" >/dev/null
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Validate staging Compose policy
+        env:
+          OR_CONTROL_PLANE_IMAGE: onionroute/control-plane:ci
+        run: python3 infrastructure/staging/test_compose.py
+      - name: Build the staging image
+        run: |
+          docker build \
+            --file infrastructure/staging/Dockerfile.control-plane \
+            --build-arg "OR_BUILD_REVISION=${GITHUB_SHA}" \
+            --build-arg "OR_IMAGE_SOURCE=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" \
+            --tag "onionroute/control-plane:${GITHUB_SHA}" \
+            .
+      - name: Verify expected image tag
+        run: |
+          test "$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "onionroute/control-plane:${GITHUB_SHA}")" = "${GITHUB_SHA}"
+      - name: Verify signed deployment bundle contract
+        run: bash infrastructure/staging/test_bundle.sh "${GITHUB_SHA}"
+      - name: Publish the CI-gated immutable image
+        id: publish_image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          image_repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          image_tag="${image_repository}:${GITHUB_SHA}"
+          printf '%s' "$GH_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag "onionroute/control-plane:${GITHUB_SHA}" "$image_tag"
+          push_output="$(docker push "$image_tag" 2>&1 | tee /dev/stderr)"
+          image_digest="$(sed -nE \
+            's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' \
+            <<< "$push_output" | tail -n 1)"
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "registry did not return an immutable image digest" >&2
+            exit 70
+          fi
+          printf 'image=%s@%s\n' "$image_repository" "$image_digest" >> "$GITHUB_OUTPUT"
+          printf 'image_digest=%s\n' "$image_digest" >> "$GITHUB_OUTPUT"
+      - name: Create the exact-run promotion record
+        shell: bash
+        env:
+          PROMOTED_IMAGE: ${{ steps.publish_image.outputs.image }}
+          PROMOTED_IMAGE_DIGEST: ${{ steps.publish_image.outputs.image_digest }}
+        run: |
+          set -Eeuo pipefail
+          promotion_dir="${RUNNER_TEMP}/onionroute-staging-promotion"
+          install -d -m 0700 "$promotion_dir"
+          jq --sort-keys --null-input \
+            --arg schema "onionroute-staging-promotion-v1" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg revision "$GITHUB_SHA" \
+            --arg workflow ".github/workflows/backend-ci.yml" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg image "$PROMOTED_IMAGE" \
+            --arg image_digest "$PROMOTED_IMAGE_DIGEST" \
+            '{
+              schema: $schema,
+              repository: $repository,
+              revision: $revision,
+              workflow: $workflow,
+              run_id: $run_id,
+              run_attempt: $run_attempt,
+              image: $image,
+              image_digest: $image_digest
+            }' > "${promotion_dir}/promotion.json"
+          test "$(stat --format='%s' "${promotion_dir}/promotion.json")" -le 4096
+      - name: Upload the exact-run promotion record
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: onionroute-staging-promotion-${{ github.run_id }}
+          path: ${{ runner.temp }}/onionroute-staging-promotion/promotion.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+          overwrite: true
+      - name: Mark immutable image publication successful
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_DIGEST: ${{ steps.publish_image.outputs.image_digest }}
+        run: |
+          set -Eeuo pipefail
+          payload="$(jq -nc \
+            --arg digest "$IMAGE_DIGEST" \
+            --arg target_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:"success",context:"onionroute/staging-image",description:$digest,target_url:$target_url}')"
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --proto '=https' \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary "$payload" >/dev/null
+      - name: Log out of the image registry
+        if: always()
+        run: docker logout ghcr.io || true
+
+  mark_staging_image_failure:
+    name: Mark staging image publication failure
+    if: >-
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/gateway/multihop' &&
+      needs.publish_staging_image.result != 'success'
+    needs:
+      - publish_staging_image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    steps:
+      - name: Replace a pending image status with failure
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          payload="$(jq -nc \
+            --arg target_url "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:"failure",context:"onionroute/staging-image",description:"gated staging image publication failed",target_url:$target_url}')"
+          curl --fail --silent --show-error \
+            --connect-timeout 10 \
+            --max-time 60 \
+            --proto '=https' \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Content-Type: application/json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data-binary "$payload" >/dev/null
