@@ -38,7 +38,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                             let startupStatus = try core.tunnelReady(true)
                             self.drainEvents()
                             SharedState().setExtensionState(
-                                startupStatus == OR_STATUS_UNAVAILABLE_I32
+                                startupStatus == MobileFFICode.statusUnavailable
                                     ? "blocked-production-runtime-unavailable"
                                     : "bootstrapping-tor-blocked"
                             )
@@ -213,14 +213,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 do {
                     let status = try core.submit(packet: packet)
-                    if status == OR_STATUS_BACKPRESSURE_I32 {
+                    if status == MobileFFICode.statusBackpressure {
                         let retryIndex = index
                         workQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in
                             self?.processPackets(packets, from: retryIndex, generation: generation)
                         }
                         return
                     }
-                    if status == OR_STATUS_UNAVAILABLE_I32 {
+                    if status == MobileFFICode.statusUnavailable {
                         deactivatePacketPumps()
                         SharedState().setExtensionState("blocked-packet-core-unavailable")
                         return
@@ -273,7 +273,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let payloads = packets.map(\.data)
         let protocols = packets.map { packet in
             NSNumber(
-                value: packet.protocolVersion == OR_PACKET_PROTOCOL_IPV4_U32
+                value: packet.protocolVersion == MobileFFICode.packetProtocolIPv4
                     ? AF_INET
                     : AF_INET6
             )

@@ -76,19 +76,6 @@ enum or_rotation_kind {
   OR_ROTATION_HARD = 1
 };
 
-/* Swift imports plain C enums as distinct wrapper types. These typed aliases
- * preserve the enum declarations for C callers while providing unambiguous
- * fixed-width values at the Swift FFI boundary. */
-#define OR_STATUS_OK_I32 ((int32_t)OR_STATUS_OK)
-#define OR_STATUS_EMPTY_I32 ((int32_t)OR_STATUS_EMPTY)
-#define OR_STATUS_BACKPRESSURE_I32 ((int32_t)OR_STATUS_BACKPRESSURE)
-#define OR_STATUS_UNAVAILABLE_I32 ((int32_t)OR_STATUS_UNAVAILABLE)
-#define OR_STATUS_BUFFER_TOO_SMALL_I32 ((int32_t)OR_STATUS_BUFFER_TOO_SMALL)
-#define OR_PACKET_PROTOCOL_IPV4_U32 ((uint32_t)OR_PACKET_PROTOCOL_IPV4)
-#define OR_PACKET_PROTOCOL_IPV6_U32 ((uint32_t)OR_PACKET_PROTOCOL_IPV6)
-#define OR_ROTATION_SOFT_U32 ((uint32_t)OR_ROTATION_SOFT)
-#define OR_ROTATION_HARD_U32 ((uint32_t)OR_ROTATION_HARD)
-
 typedef struct or_create_options {
   uint32_t struct_size;
   uint16_t abi_min_major;
