@@ -74,6 +74,14 @@ def main() -> int:
         "containing app bundle identifier comes from the build setting",
         failures,
     )
+    for label, info in (("app", app_info), ("extension", tunnel_info)):
+        require(
+            info.get("CFBundleExecutable") == "$(EXECUTABLE_NAME)"
+            and info.get("CFBundlePackageType")
+            == "$(PRODUCT_BUNDLE_PACKAGE_TYPE)",
+            f"{label} declares installable executable bundle metadata",
+            failures,
+        )
 
     for label, entitlements in (
         ("app", app_entitlements),
