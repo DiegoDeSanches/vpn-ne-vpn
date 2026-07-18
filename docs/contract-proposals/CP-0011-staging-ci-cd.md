@@ -25,11 +25,16 @@ Add two versioned GitHub Actions workflows:
 
 1. Backend CI checks architecture and secret policies, the root Rust workspace, the
    services workspace, standalone server workspaces, and a staging Docker build.
-2. Backend CI publishes the gated Rust control-plane image by immutable GHCR digest.
-   A manual staging workflow promotes that exact digest, creates a signed
-   deterministic manifest, and streams it to a forced SSH deploy controller. The
-   controller owns signature verification, migration, health, rollback, and audit
-   behavior.
+2. Pull requests and non-release refs validate the staging image with a read-only
+   token. Write permissions exist only in jobs for an exact push to
+   `gateway/multihop`: package/status access for publication and status-only access
+   for failure cleanup. A successful publisher emits an immutable GHCR digest and a
+   bounded promotion artifact containing the exact commit, run ID, run attempt, and
+   digest before marking its status successful. A manual staging workflow requires
+   that digest status to target the exact successful CI run and match its verified
+   promotion artifact, creates a signed deterministic manifest, and streams it to a
+   forced SSH deploy controller. The controller owns signature verification,
+   migration, health, rollback, and audit behavior.
 
 The deploy workflow uses a protected staging environment, full commit SHA image
 tags, strict host-key verification, separate SSH and bundle-signing keys, static
@@ -84,3 +89,5 @@ required confirmation input.
 - Migration from an empty database and rejection of a partial schema.
 - Least-privilege database role checks, Tor bootstrap, Onion self-request, and
   health-gated deploy plus injected-failure binary rollback.
+- Read-only PR image validation, gateway-only registry publication, failed-status
+  cleanup, and exact CI run/attempt/artifact/digest binding contract checks.

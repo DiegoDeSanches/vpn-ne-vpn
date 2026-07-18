@@ -161,6 +161,13 @@ directory format, token format or gateway public protocol was changed.
 - Added distinct non-superuser PostgreSQL roles/passwords for all four services,
   final-process PostgreSQL readiness, Tor control-port bootstrap readiness, and an
   end-to-end request through the generated Onion Service.
+- Restricted package/status write permissions to the gateway publish job; PR and
+  non-release image validation is read-only. Digest promotion now verifies the exact
+  Backend CI workflow ID, successful run and run attempt named by the latest status,
+  plus the SHA-256 and bounded contents of its unique promotion artifact, then
+  rechecks that status;
+  the same run/status gates execute again immediately before SSH. Failed publication
+  clears a pending status to failure.
 - Restored the declared Rust 1.78 MSRV by pinning only incompatible transitive lock
   entries in `services`, `auth-tokens`, and `token-service`.
 
@@ -192,6 +199,9 @@ covered by CP-0011 and ADR-0021.
   credentials and the staging bundle-signing key.
 - The `staging` Environment has been created and restricted to `gateway/multihop`;
   its five secrets remain intentionally unset until provider-console bootstrap.
+- Repository Actions defaults are read-only, Actions cannot create/approve pull
+  requests, and full-length commit SHA pinning is enforced for every referenced
+  GitHub Action.
 
 ### Tests passing
 
@@ -200,7 +210,7 @@ covered by CP-0011 and ADR-0021.
   circuit-manager, and token-service.
 - Full multi-stage image build with digest-pinned Dockerfile frontend/base images and
   exact OCI revision label.
-- Compose contract tests (7), SSH delivery contract tests (11), `actionlint`, YAML
+- Compose contract tests (7), SSH delivery contract tests (14), `actionlint`, YAML
   parsing, shell syntax, signed-bundle happy path, and tampered-signature rejection.
 - Local full-stack smoke: PostgreSQL 18 final-process readiness, schema and
   least-privilege role migration, all four Rust services healthy, Tor bootstrap at
@@ -227,6 +237,8 @@ covered by CP-0011 and ADR-0021.
   repository even though base images are digest-pinned. The promoted GHCR digest is
   immutable, but a future rebuild of the same source may differ until an apt snapshot
   is introduced.
+- Exact-run promotion artifacts are retained for 30 days. Deploying an older revision
+  after expiry requires a fresh successful Backend CI run and promotion record.
 - The 1 GiB server capacity and public-SSH attack surface require live observation;
   this adapter remains forbidden for production.
 

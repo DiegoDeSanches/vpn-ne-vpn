@@ -19,10 +19,18 @@ production deployment would be misleading and would weaken fail-closed behavior.
 ## Decision
 
 Add a separate GitHub Environment named staging and a manually dispatched workflow
-for the Rust control plane only. Backend CI builds one commit-SHA-tagged Docker
-image after all gates, publishes it to GHCR, and records its immutable digest on
-the commit. The deploy workflow promotes that exact digest rather than rebuilding
-source and streams a signed, checksummed, size-bounded bundle over SSH.
+for the Rust control plane only. Pull requests and non-release refs validate the
+commit-SHA-tagged Docker image with a read-only token. Write permissions exist only
+in jobs for an exact push to `gateway/multihop`: the publisher receives package and
+status access, while a no-checkout cleanup job receives status access only. A
+successful publisher builds the gated image, pushes it to GHCR, and uploads a
+bounded promotion record containing its immutable digest, commit, workflow run ID,
+and run attempt before marking the digest status successful. The deploy workflow
+verifies the exact run metadata, fetches the uniquely named run artifact, verifies
+the size-bounded artifact archive digest and promotion record, revalidates the exact
+Backend CI workflow ID, successful run attempt, and unchanged latest status, promotes
+that digest rather than rebuilding source, then repeats the run/status checks
+immediately before streaming a signed, checksummed, size-bounded bundle over SSH.
 
 The SSH credential is an environment-specific Ed25519 key installed on the staging
 root account with OpenSSH restrict and a forced, root-owned deploy controller. A
@@ -58,6 +66,13 @@ all user data-plane traffic.
   Tor, TLS, token, and gateway secrets stay off GitHub.
 - The SSH and bundle-signing keys must be distinct. A stolen SSH key alone cannot
   authorize arbitrary root-controlled Compose input.
+- Pull-request image validation cannot write packages or commit statuses. A failed
+  gateway publication replaces its pending digest status with a failure state.
+- A commit status cannot substitute an arbitrary digest from another build: the
+  digest must match the promotion artifact of the exact successful run and current
+  run attempt. A later rerun creates a new promotion attempt; a pending or failed
+  status prevents newly started deploys. Expired artifacts require a fresh successful
+  CI run.
 - Database migrations are not rolled back. Only expand-only migrations may enter
   this adapter.
 - A valid signed bundle can be accepted only once by workflow run order. Retrying a

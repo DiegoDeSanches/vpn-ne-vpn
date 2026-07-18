@@ -12,10 +12,17 @@ ready.
 
 ## Trust boundary
 
-Backend CI builds one image tagged with the full commit SHA after every required
-gate, publishes it to GHCR, and records its immutable registry digest on the
-commit. The deploy workflow accepts only that CI-promoted digest. It signs the
-bundle manifest with a second Ed25519 key before streaming it over SSH.
+Backend CI validates a full-commit-SHA image after every required gate with a
+read-only token. Only a successful push to gateway/multihop can publish it to GHCR.
+Before recording a successful immutable-digest status, that run uploads a bounded
+promotion record containing its commit, run ID, run attempt, image, and digest. The
+deploy workflow revalidates the exact successful run, verifies the uniquely named
+size-bounded artifact and its GitHub-reported SHA-256 digest, requires the promotion
+record to match the exact Backend CI workflow ID and successful run attempt, and
+confirms that the latest status did not change during resolution before accepting the
+image. It signs the bundle manifest with a second Ed25519 key, then repeats the
+current-run and latest-status checks inside the SSH delivery step immediately before
+streaming the bundle.
 
 The server host key must be pinned out-of-band. The dedicated SSH key is installed
 on the root account with OpenSSH restrict and a forced root-owned controller
@@ -67,7 +74,10 @@ STAGING_SSH_KNOWN_HOSTS must contain the provider-console-verified Ed25519 host
 key, including the bracketed host and port form when a non-default port is used.
 The two private keys must be distinct. The workflow is manual and requires the
 exact confirmation text deploy-staging. It additionally refuses a revision without
-a successful Backend CI push run and its matching immutable GHCR digest.
+a gateway/multihop Backend CI push run exactly referenced by the latest successful
+immutable GHCR digest status and a matching, unexpired exact-run promotion artifact.
+Promotion artifacts are retained for 30 days; deploy an older revision only after a
+fresh successful Backend CI run recreates its record.
 
 ## Rollback and limitations
 

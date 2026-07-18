@@ -71,38 +71,262 @@ jobs:
             --fail
             --silent
             --show-error
+            --connect-timeout 10
+            --max-time 60
+            --proto '=https'
             --header "Accept: application/vnd.github+json"
             --header "Authorization: Bearer ${GH_TOKEN}"
             --header "X-GitHub-Api-Version: 2022-11-28"
           )
-          runs="$(curl "${api_args[@]}" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/backend-ci.yml/runs?head_sha=${GITHUB_SHA}&branch=gateway%2Fmultihop&event=push&status=success&per_page=100")"
-          jq -e --arg sha "$GITHUB_SHA" '
-            [.workflow_runs[] | select(
-              .head_sha == $sha and
-              .head_branch == "gateway/multihop" and
-              .event == "push" and
-              .conclusion == "success"
-            )] | length > 0
-          ' <<< "$runs" >/dev/null || {
-            echo "no successful Backend CI push run exists for this revision" >&2
+          backend_workflow="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/backend-ci.yml")"
+          backend_workflow_id="$(jq -r '.id | tostring' <<< "$backend_workflow")"
+          if [[ ! "$backend_workflow_id" =~ ^[1-9][0-9]{0,17}$ ]]; then
+            echo "Backend CI workflow has an invalid identifier" >&2
+            exit 78
+          fi
+          jq -e \
+            --arg workflow_id "$backend_workflow_id" '
+            ((.id | tostring) == $workflow_id) and
+            (.path == ".github/workflows/backend-ci.yml") and
+            (.state == "active")
+          ' <<< "$backend_workflow" >/dev/null || {
+            echo "Backend CI workflow identity is not active or exact" >&2
             exit 78
           }
           statuses="$(curl "${api_args[@]}" \
-            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status?per_page=100")"
-          image_digest="$(jq -r '
-            [.statuses[] | select(.context == "onionroute/staging-image")]
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/statuses?per_page=100&page=1")"
+          image_status="$(jq -ce '
+            [.[] | select(.context == "onionroute/staging-image")]
             | .[0]
             | select(.state == "success")
-            | .description // empty
-          ' <<< "$statuses")"
+          ' <<< "$statuses")" || {
+            echo "latest CI image status is absent or not successful" >&2
+            exit 78
+          }
+          image_digest="$(jq -r '.description // empty' <<< "$image_status")"
+          image_status_id="$(jq -r '.id | tostring' <<< "$image_status")"
           if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "CI image status does not contain a valid immutable digest" >&2
             exit 78
           fi
+          if [[ ! "$image_status_id" =~ ^[1-9][0-9]{0,17}$ ]]; then
+            echo "CI image status has an invalid identifier" >&2
+            exit 78
+          fi
+          ci_target_url="$(jq -r '.target_url // empty' <<< "$image_status")"
+          ci_run_prefix="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/"
+          if [[ "$ci_target_url" != "${ci_run_prefix}"* ]]; then
+            echo "CI image status does not target a repository workflow run" >&2
+            exit 78
+          fi
+          ci_run_id="${ci_target_url#"$ci_run_prefix"}"
+          if [[ ! "$ci_run_id" =~ ^[1-9][0-9]{0,17}$ ]] ||
+             [[ "$ci_target_url" != "${ci_run_prefix}${ci_run_id}" ]]; then
+            echo "CI image status contains an invalid workflow run id" >&2
+            exit 78
+          fi
+          ci_run="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}")"
+          jq -e \
+            --arg run_id "$ci_run_id" \
+            --arg target_url "$ci_target_url" \
+            --arg workflow_id "$backend_workflow_id" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$GITHUB_SHA" '
+            (
+                ((.id | tostring) == $run_id) and
+                (.html_url == $target_url) and
+                ((.workflow_id | tostring) == $workflow_id) and
+                (.repository.full_name == $repository) and
+                (.head_sha == $sha) and
+                (.head_branch == "gateway/multihop") and
+                (.event == "push") and
+                (.status == "completed") and
+                (.conclusion == "success")
+              )
+          ' <<< "$ci_run" >/dev/null || {
+            echo "CI image status is not bound to the expected successful Backend CI run" >&2
+            exit 78
+          }
+          ci_run_attempt="$(jq -r '
+            if (.run_attempt | type) == "number" then
+              (.run_attempt | tostring)
+            else
+              empty
+            end
+          ' <<< "$ci_run")"
+          if [[ ! "$ci_run_attempt" =~ ^[1-9][0-9]{0,8}$ ]]; then
+            echo "Backend CI run has an invalid run attempt" >&2
+            exit 78
+          fi
+
+          promotion_name="onionroute-staging-promotion-${ci_run_id}"
+          artifacts="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}/artifacts?name=${promotion_name}&per_page=100")"
+          promotion_artifact="$(jq -ce \
+            --arg name "$promotion_name" \
+            --arg run_id "$ci_run_id" \
+            --arg sha "$GITHUB_SHA" '
+            select(.total_count == 1)
+            | .artifacts
+            | select(length == 1)
+            | .[0]
+            | select(
+                (.name == $name) and
+                (.expired == false) and
+                ((.workflow_run.id | tostring) == $run_id) and
+                (.workflow_run.head_sha == $sha) and
+                (.workflow_run.head_branch == "gateway/multihop")
+              )
+          ' <<< "$artifacts")" || {
+            echo "exact-run image promotion artifact is absent, ambiguous, or expired" >&2
+            exit 78
+          }
+          artifact_id="$(jq -r '.id | tostring' <<< "$promotion_artifact")"
+          artifact_digest="$(jq -r '.digest // empty' <<< "$promotion_artifact")"
+          artifact_size="$(jq -r '.size_in_bytes | tostring' <<< "$promotion_artifact")"
+          if [[ ! "$artifact_id" =~ ^[1-9][0-9]{0,17}$ ]] ||
+             [[ ! "$artifact_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+             [[ ! "$artifact_size" =~ ^[1-9][0-9]{0,6}$ ]] ||
+             (( artifact_size > 1048576 )); then
+            echo "image promotion artifact metadata is invalid" >&2
+            exit 78
+          fi
+
+          promotion_zip="${RUNNER_TEMP}/onionroute-promotion-${ci_run_id}.zip"
+          promotion_json="${RUNNER_TEMP}/onionroute-promotion-${ci_run_id}.json"
+          curl "${api_args[@]}" --location \
+            --max-filesize 1048576 \
+            --proto-redir '=https' \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            --output "$promotion_zip"
+          downloaded_size="$(stat --format='%s' "$promotion_zip")"
+          if [[ ! "$downloaded_size" =~ ^[1-9][0-9]{0,6}$ ]] ||
+             (( downloaded_size > 1048576 )); then
+            echo "downloaded image promotion artifact exceeds its size limit" >&2
+            exit 78
+          fi
+          downloaded_digest="sha256:$(sha256sum "$promotion_zip" | awk '{print $1}')"
+          if [[ "$downloaded_digest" != "$artifact_digest" ]]; then
+            echo "image promotion artifact digest does not match GitHub metadata" >&2
+            exit 78
+          fi
+          python3 - "$promotion_zip" "$promotion_json" <<'PY'
+          import pathlib
+          import sys
+          import zipfile
+
+          archive_path = pathlib.Path(sys.argv[1])
+          destination = pathlib.Path(sys.argv[2])
+          with zipfile.ZipFile(archive_path) as archive:
+              members = archive.infolist()
+              if len(members) != 1 or members[0].filename != "promotion.json":
+                  raise SystemExit("promotion artifact has an unexpected member set")
+              member = members[0]
+              if (
+                  member.is_dir()
+                  or member.file_size < 1
+                  or member.file_size > 4096
+                  or member.compress_size < 1
+                  or member.compress_size > 1048576
+                  or member.flag_bits & 0x1
+                  or member.compress_type
+                  not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED)
+              ):
+                  raise SystemExit("promotion record has an invalid size")
+              with archive.open(member, "r") as source:
+                  data = source.read(4097)
+                  if len(data) > 4096 or source.read(1):
+                      raise SystemExit("promotion record exceeds its read limit")
+          if len(data) != member.file_size:
+              raise SystemExit("promotion record is truncated")
+          destination.write_bytes(data)
+          PY
+
           image_repository="ghcr.io/${GITHUB_REPOSITORY,,}"
-          printf 'OR_PROMOTED_IMAGE=%s@%s\n' \
-            "$image_repository" "$image_digest" >> "$GITHUB_ENV"
+          expected_image="${image_repository}@${image_digest}"
+          jq -e \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg revision "$GITHUB_SHA" \
+            --arg run_id "$ci_run_id" \
+            --arg run_attempt "$ci_run_attempt" \
+            --arg image "$expected_image" \
+            --arg image_digest "$image_digest" '
+            (keys | sort) == [
+              "image",
+              "image_digest",
+              "repository",
+              "revision",
+              "run_attempt",
+              "run_id",
+              "schema",
+              "workflow"
+            ] and
+            (.schema == "onionroute-staging-promotion-v1") and
+            (.repository == $repository) and
+            (.revision == $revision) and
+            (.workflow == ".github/workflows/backend-ci.yml") and
+            (.run_id == $run_id) and
+            (.run_attempt == $run_attempt) and
+            (.image == $image) and
+            (.image_digest == $image_digest)
+          ' "$promotion_json" >/dev/null || {
+            echo "image promotion record does not match the exact CI run and digest" >&2
+            exit 78
+          }
+
+          ci_attempt="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${ci_run_id}/attempts/${ci_run_attempt}")"
+          jq -e \
+            --arg run_id "$ci_run_id" \
+            --arg run_attempt "$ci_run_attempt" \
+            --arg workflow_id "$backend_workflow_id" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$GITHUB_SHA" '
+            (
+                ((.id | tostring) == $run_id) and
+                ((.run_attempt | tostring) == $run_attempt) and
+                ((.workflow_id | tostring) == $workflow_id) and
+                (.repository.full_name == $repository) and
+                (.head_sha == $sha) and
+                (.head_branch == "gateway/multihop") and
+                (.event == "push") and
+                (.status == "completed") and
+                (.conclusion == "success")
+              )
+          ' <<< "$ci_attempt" >/dev/null || {
+            echo "promotion artifact does not belong to the expected successful CI attempt" >&2
+            exit 78
+          }
+          latest_statuses="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/statuses?per_page=100&page=1")"
+          jq -e \
+            --arg status_id "$image_status_id" \
+            --arg digest "$image_digest" \
+            --arg target_url "$ci_target_url" '
+            [.[] | select(.context == "onionroute/staging-image")]
+            | .[0]
+            | (
+                ((.id | tostring) == $status_id) and
+                (.state == "success") and
+                (.description == $digest) and
+                (.target_url == $target_url)
+              )
+          ' <<< "$latest_statuses" >/dev/null || {
+            echo "CI image promotion status changed while it was being verified" >&2
+            exit 78
+          }
+          promoted_image="$(jq -r '.image' "$promotion_json")"
+          {
+            printf 'OR_PROMOTED_IMAGE=%s\n' "$promoted_image"
+            printf 'OR_PROMOTION_RUN_ID=%s\n' "$ci_run_id"
+            printf 'OR_PROMOTION_RUN_ATTEMPT=%s\n' "$ci_run_attempt"
+            printf 'OR_PROMOTION_WORKFLOW_ID=%s\n' "$backend_workflow_id"
+            printf 'OR_PROMOTION_STATUS_ID=%s\n' "$image_status_id"
+            printf 'OR_PROMOTION_DIGEST=%s\n' "$image_digest"
+            printf 'OR_PROMOTION_TARGET_URL=%s\n' "$ci_target_url"
+          } >> "$GITHUB_ENV"
 
       - name: Pull the exact CI-promoted image
         shell: bash
@@ -168,10 +392,63 @@ jobs:
       - name: Stream bundle to the forced deploy controller
         shell: bash
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
           SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
         run: |
           set -Eeuo pipefail
+          api_args=(
+            --fail
+            --silent
+            --show-error
+            --connect-timeout 10
+            --max-time 60
+            --proto '=https'
+            --header "Accept: application/vnd.github+json"
+            --header "Authorization: Bearer ${GH_TOKEN}"
+            --header "X-GitHub-Api-Version: 2022-11-28"
+          )
+          current_run="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/runs/${OR_PROMOTION_RUN_ID}")"
+          jq -e \
+            --arg run_id "$OR_PROMOTION_RUN_ID" \
+            --arg run_attempt "$OR_PROMOTION_RUN_ATTEMPT" \
+            --arg workflow_id "$OR_PROMOTION_WORKFLOW_ID" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg sha "$GITHUB_SHA" '
+            (
+                ((.id | tostring) == $run_id) and
+                ((.run_attempt | tostring) == $run_attempt) and
+                ((.workflow_id | tostring) == $workflow_id) and
+                (.repository.full_name == $repository) and
+                (.head_sha == $sha) and
+                (.head_branch == "gateway/multihop") and
+                (.event == "push") and
+                (.status == "completed") and
+                (.conclusion == "success")
+              )
+          ' <<< "$current_run" >/dev/null || {
+            echo "CI image promotion run changed before SSH delivery" >&2
+            exit 78
+          }
+          latest_statuses="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/statuses?per_page=100&page=1")"
+          jq -e \
+            --arg status_id "$OR_PROMOTION_STATUS_ID" \
+            --arg digest "$OR_PROMOTION_DIGEST" \
+            --arg target_url "$OR_PROMOTION_TARGET_URL" '
+            [.[] | select(.context == "onionroute/staging-image")]
+            | .[0]
+            | (
+                ((.id | tostring) == $status_id) and
+                (.state == "success") and
+                (.description == $digest) and
+                (.target_url == $target_url)
+              )
+          ' <<< "$latest_statuses" >/dev/null || {
+            echo "CI image promotion status changed before SSH delivery" >&2
+            exit 78
+          }
           bundle="${RUNNER_TEMP}/onionroute-staging-${GITHUB_SHA}.tgz"
           bundle_digest="$(sha256sum "$bundle" | awk '{print $1}')"
           ssh \
