@@ -38,7 +38,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                             let startupStatus = try core.tunnelReady(true)
                             self.drainEvents()
                             SharedState().setExtensionState(
-                                startupStatus == OR_STATUS_UNAVAILABLE
+                                startupStatus == OR_STATUS_UNAVAILABLE_I32
                                     ? "blocked-production-runtime-unavailable"
                                     : "bootstrapping-tor-blocked"
                             )
@@ -143,7 +143,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         deactivatePacketPumps()
         pathMonitor?.cancel()
         pathMonitor = nil
-        try? core.tunnelReady(false)
+        _ = try? core.tunnelReady(false)
         core.shutdown()
         if self.core === core { self.core = nil }
         SharedState().setExtensionState("blocked-start-failed")
@@ -213,14 +213,14 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 }
                 do {
                     let status = try core.submit(packet: packet)
-                    if status == OR_STATUS_BACKPRESSURE {
+                    if status == OR_STATUS_BACKPRESSURE_I32 {
                         let retryIndex = index
                         workQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in
                             self?.processPackets(packets, from: retryIndex, generation: generation)
                         }
                         return
                     }
-                    if status == OR_STATUS_UNAVAILABLE {
+                    if status == OR_STATUS_UNAVAILABLE_I32 {
                         deactivatePacketPumps()
                         SharedState().setExtensionState("blocked-packet-core-unavailable")
                         return
@@ -273,7 +273,7 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         let payloads = packets.map(\.data)
         let protocols = packets.map { packet in
             NSNumber(
-                value: packet.protocolVersion == UInt32(OR_PACKET_PROTOCOL_IPV4)
+                value: packet.protocolVersion == OR_PACKET_PROTOCOL_IPV4_U32
                     ? AF_INET
                     : AF_INET6
             )
