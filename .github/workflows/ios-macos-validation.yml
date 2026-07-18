@@ -1,0 +1,82 @@
+name: iOS macOS validation
+
+on:
+  push:
+    branches:
+      - ci/ios-macos-validation
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-macos-validation
+  cancel-in-progress: true
+
+jobs:
+  ios-validation:
+    runs-on: macos-15
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Report Apple toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+          swift --version
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Install Rust toolchain and Apple targets
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal
+          rustup component add clippy --toolchain 1.78.0
+          rustup target add --toolchain 1.78.0 \
+            aarch64-apple-ios \
+            aarch64-apple-ios-sim \
+            x86_64-apple-ios
+
+      - name: Test Rust workspace
+        run: rustup run 1.78.0 cargo test --workspace --locked
+
+      - name: Lint Rust workspace
+        run: rustup run 1.78.0 cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Check embedded C Tor Apple adapter
+        run: |
+          rustup run 1.78.0 cargo check \
+            --locked \
+            --manifest-path crates/tor-backend/Cargo.toml \
+            --features embedded-ctor \
+            --target aarch64-apple-ios
+          rustup run 1.78.0 cargo clippy \
+            --locked \
+            --manifest-path crates/tor-backend/Cargo.toml \
+            --features embedded-ctor \
+            --target aarch64-apple-ios \
+            -- -D warnings
+
+      - name: Select and boot an iOS simulator
+        shell: bash
+        run: |
+          simulator_id="$({ xcrun simctl list devices available -j || exit 1; } | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)
+          for runtime, devices in data["devices"].items():
+              if "iOS" not in runtime:
+                  continue
+              for device in devices:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      print(device["udid"])
+                      raise SystemExit(0)
+          raise SystemExit("no available iPhone simulator")
+          ' )"
+          xcrun simctl boot "${simulator_id}" || true
+          echo "IOS_SIMULATOR_DESTINATION=platform=iOS Simulator,id=${simulator_id}" >> "${GITHUB_ENV}"
+
+      - name: Build and test iOS application
+        run: bash clients/ios/scripts/build-and-test.sh

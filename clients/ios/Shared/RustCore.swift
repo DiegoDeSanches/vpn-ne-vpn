@@ -1,6 +1,11 @@
 import Foundation
 
 final class RustCore: @unchecked Sendable {
+    struct Packet: Sendable {
+        let data: Data
+        let protocolVersion: UInt32
+    }
+
     struct Event: Sendable {
         let kind: UInt32
         let sequence: UInt64
@@ -37,8 +42,13 @@ final class RustCore: @unchecked Sendable {
         }
     }
 
-    func tunnelReady(_ ready: Bool) throws {
-        try withHandle { try check(or_client_set_tunnel_ready($0, ready ? 1 : 0)) }
+    @discardableResult
+    func tunnelReady(_ ready: Bool) throws -> Int32 {
+        try withHandle { handle in
+            let status = or_client_set_tunnel_ready(handle, ready ? 1 : 0)
+            if status != OR_STATUS_UNAVAILABLE { try check(status) }
+            return status
+        }
     }
 
     func setCountry(_ country: String) throws {
@@ -108,9 +118,54 @@ final class RustCore: @unchecked Sendable {
                     raw.bindMemory(to: UInt8.self).baseAddress,
                     raw.count
                 )
-                if status != OR_STATUS_UNAVAILABLE { try check(status) }
+                if status != OR_STATUS_UNAVAILABLE && status != OR_STATUS_BACKPRESSURE {
+                    try check(status)
+                }
                 return status
             }
+        }
+    }
+
+    func pollPacket() throws -> Packet? {
+        try withHandle { handle in
+            var packetLength = 0
+            var protocolVersion: UInt32 = 0
+            let probeStatus = or_client_poll_packet(
+                handle,
+                nil,
+                0,
+                &packetLength,
+                &protocolVersion
+            )
+            if probeStatus == OR_STATUS_EMPTY { return nil }
+            guard
+                probeStatus == OR_STATUS_BUFFER_TOO_SMALL,
+                packetLength > 0,
+                packetLength <= 128 * 1024
+            else {
+                try check(probeStatus)
+                throw RustCoreError.invalidArgument
+            }
+
+            var data = Data(count: packetLength)
+            let status = data.withUnsafeMutableBytes { raw in
+                or_client_poll_packet(
+                    handle,
+                    raw.bindMemory(to: UInt8.self).baseAddress,
+                    raw.count,
+                    &packetLength,
+                    &protocolVersion
+                )
+            }
+            try check(status)
+            guard
+                packetLength > 0,
+                packetLength <= data.count,
+                protocolVersion == UInt32(OR_PACKET_PROTOCOL_IPV4) ||
+                    protocolVersion == UInt32(OR_PACKET_PROTOCOL_IPV6)
+            else { throw RustCoreError.invalidArgument }
+            data.removeSubrange(packetLength..<data.endIndex)
+            return Packet(data: data, protocolVersion: protocolVersion)
         }
     }
 
@@ -163,4 +218,3 @@ enum RustCoreError: Error, Equatable {
 private func check(_ status: Int32) throws {
     guard status == OR_STATUS_OK else { throw RustCoreError.native(status) }
 }
-

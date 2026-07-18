@@ -297,6 +297,11 @@ impl ClientCore {
     pub fn active_flows(&self) -> usize {
         self.packet.active_flows()
     }
+
+    /// Returns process-local flow identifiers for the owning bounded I/O pump.
+    pub fn active_flow_ids(&self) -> Vec<FlowId> {
+        self.packet.flow_ids()
+    }
 }
 
 pub(crate) fn core_error(code: ErrorCode, message: &'static str) -> OnionError {

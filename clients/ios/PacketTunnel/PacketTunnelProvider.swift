@@ -1,20 +1,25 @@
 import Foundation
 import Network
 import NetworkExtension
+import Darwin
 
 final class PacketTunnelProvider: NEPacketTunnelProvider {
     private let workQueue = DispatchQueue(label: "org.onionroute.packet-tunnel")
-    private let pathMonitor = NWPathMonitor()
+    private var pathMonitor: NWPathMonitor?
     private var core: RustCore?
     private var acceptingPackets = false
     private var lastPathHealthy = false
+    private var packetPumpGeneration: UInt64 = 0
 
     override func startTunnel(
         options: [String: NSObject]? = nil,
         completionHandler: @escaping (Error?) -> Void
     ) {
         workQueue.async { [weak self] in
-            guard let self else { return }
+            guard let self else {
+                completionHandler(TunnelError.providerUnavailable)
+                return
+            }
             do {
                 let configuration = try self.validatedConfiguration()
                 let core = try RustCore(eventCapacity: 256, memoryBudgetBytes: 48 * 1024 * 1024)
@@ -26,22 +31,23 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 self.setTunnelNetworkSettings(self.networkSettings()) { error in
                     self.workQueue.async {
                         if let error {
-                            try? core.tunnelReady(false)
-                            completionHandler(error)
+                            self.failStart(core: core, error: error, completionHandler: completionHandler)
                             return
                         }
                         do {
-                            try core.tunnelReady(true)
-                            self.acceptingPackets = true
-                            self.readPackets()
+                            let startupStatus = try core.tunnelReady(true)
                             self.drainEvents()
-                            SharedState().setExtensionState("bootstrapping-tor-blocked")
-                            // Production waits for Tor/gateway readiness. The
-                            // prototype completes so the full-route TUN remains
-                            // installed, but drops every packet fail-closed.
+                            SharedState().setExtensionState(
+                                startupStatus == OR_STATUS_UNAVAILABLE
+                                    ? "blocked-production-runtime-unavailable"
+                                    : "bootstrapping-tor-blocked"
+                            )
+                            // Keep the full-route TUN installed while the protected
+                            // core bootstraps. Packet reads start only after the
+                            // core reports the Connected state.
                             completionHandler(nil)
                         } catch {
-                            completionHandler(error)
+                            self.failStart(core: core, error: error, completionHandler: completionHandler)
                         }
                     }
                 }
@@ -60,8 +66,9 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler()
                 return
             }
-            self.acceptingPackets = false
-            self.pathMonitor.cancel()
+            self.deactivatePacketPumps()
+            self.pathMonitor?.cancel()
+            self.pathMonitor = nil
             self.core?.shutdown()
             self.core = nil
             SharedState().setExtensionState("stopped-\(reason.rawValue)")
@@ -98,14 +105,18 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 completionHandler?(nil)
                 return
             }
-            switch messageData.first {
-            case 1: try? core.rotate(hard: false)
-            case 2: try? core.rotate(hard: true)
-            case 3: try? core.requestTokenRefresh()
-            case 4: try? core.requestConfigRefresh()
-            default: break
+            do {
+                switch messageData.first {
+                case 1: try core.rotate(hard: false)
+                case 2: try core.rotate(hard: true)
+                case 3: try core.requestTokenRefresh()
+                case 4: try core.requestConfigRefresh()
+                default: throw TunnelError.invalidMessage
+                }
+                completionHandler?(Data([1]))
+            } catch {
+                completionHandler?(Data([0]))
             }
-            completionHandler?(Data([1]))
         }
     }
 
@@ -124,8 +135,26 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
         return settings
     }
 
+    private func failStart(
+        core: RustCore,
+        error: Error,
+        completionHandler: @escaping (Error?) -> Void
+    ) {
+        deactivatePacketPumps()
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        try? core.tunnelReady(false)
+        core.shutdown()
+        if self.core === core { self.core = nil }
+        SharedState().setExtensionState("blocked-start-failed")
+        completionHandler(error)
+    }
+
     private func startPathMonitor() {
-        pathMonitor.pathUpdateHandler = { [weak self] path in
+        pathMonitor?.cancel()
+        let monitor = NWPathMonitor()
+        pathMonitor = monitor
+        monitor.pathUpdateHandler = { [weak self] path in
             self?.workQueue.async {
                 guard let self, let core = self.core else { return }
                 let healthy = path.status == .satisfied
@@ -139,31 +168,126 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
                 )
             }
         }
-        pathMonitor.start(queue: workQueue)
+        monitor.start(queue: workQueue)
     }
 
-    private func readPackets() {
-        guard acceptingPackets else { return }
+    private func activatePacketPumps() {
+        guard !acceptingPackets, core != nil else { return }
+        acceptingPackets = true
+        packetPumpGeneration &+= 1
+        let generation = packetPumpGeneration
+        readPackets(generation: generation)
+        drainOutputPackets(generation: generation)
+    }
+
+    private func deactivatePacketPumps() {
+        acceptingPackets = false
+        packetPumpGeneration &+= 1
+    }
+
+    private func readPackets(generation: UInt64) {
+        guard acceptingPackets, generation == packetPumpGeneration else { return }
         packetFlow.readPackets { [weak self] packets, _ in
             guard let self else { return }
             self.workQueue.async {
-                autoreleasepool {
-                    guard self.acceptingPackets, let core = self.core else { return }
-                    var acceptedBytes = 0
-                    for packet in packets.prefix(32) {
-                        guard !packet.isEmpty, packet.count <= 128 * 1024 else { continue }
-                        guard acceptedBytes + packet.count <= 256 * 1024 else { break }
-                        acceptedBytes += packet.count
-                        _ = try? core.submit(packet: packet)
-                    }
-                }
-                self.readPackets()
+                self.processPackets(packets, from: 0, generation: generation)
             }
         }
     }
 
+    private func processPackets(_ packets: [Data], from start: Int, generation: UInt64) {
+        autoreleasepool {
+            guard
+                acceptingPackets,
+                generation == packetPumpGeneration,
+                let core
+            else { return }
+
+            var index = start
+            let endIndex = PacketBatchBudget.standard.endIndex(in: packets, from: start)
+            while index < endIndex {
+                let packet = packets[index]
+                if packet.isEmpty || packet.count > 128 * 1024 {
+                    index += 1
+                    continue
+                }
+                do {
+                    let status = try core.submit(packet: packet)
+                    if status == OR_STATUS_BACKPRESSURE {
+                        let retryIndex = index
+                        workQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in
+                            self?.processPackets(packets, from: retryIndex, generation: generation)
+                        }
+                        return
+                    }
+                    if status == OR_STATUS_UNAVAILABLE {
+                        deactivatePacketPumps()
+                        SharedState().setExtensionState("blocked-packet-core-unavailable")
+                        return
+                    }
+                } catch {
+                    deactivatePacketPumps()
+                    SharedState().setExtensionState("blocked-packet-core-error")
+                    return
+                }
+                index += 1
+            }
+
+            if index < packets.count {
+                let nextIndex = index
+                workQueue.async { [weak self] in
+                    self?.processPackets(packets, from: nextIndex, generation: generation)
+                }
+            } else {
+                readPackets(generation: generation)
+            }
+        }
+    }
+
+    private func drainOutputPackets(generation: UInt64) {
+        guard acceptingPackets, generation == packetPumpGeneration, let core else { return }
+        var packets: [RustCore.Packet] = []
+        var bytes = 0
+        do {
+            while packets.count < 32 && bytes < 256 * 1024, let packet = try core.pollPacket() {
+                if !packets.isEmpty && bytes + packet.data.count > 256 * 1024 {
+                    guard writeOutputPackets(packets) else { return }
+                    packets.removeAll(keepingCapacity: true)
+                    bytes = 0
+                }
+                packets.append(packet)
+                bytes += packet.data.count
+            }
+        } catch {
+            deactivatePacketPumps()
+            SharedState().setExtensionState("blocked-packet-output-error")
+            return
+        }
+        guard packets.isEmpty || writeOutputPackets(packets) else { return }
+        workQueue.asyncAfter(deadline: .now() + .milliseconds(10)) { [weak self] in
+            self?.drainOutputPackets(generation: generation)
+        }
+    }
+
+    private func writeOutputPackets(_ packets: [RustCore.Packet]) -> Bool {
+        let payloads = packets.map(\.data)
+        let protocols = packets.map { packet in
+            NSNumber(
+                value: packet.protocolVersion == UInt32(OR_PACKET_PROTOCOL_IPV4)
+                    ? AF_INET
+                    : AF_INET6
+            )
+        }
+        guard packetFlow.writePackets(payloads, withProtocols: protocols) else {
+            deactivatePacketPumps()
+            SharedState().setExtensionState("blocked-packet-output-rejected")
+            return false
+        }
+        return true
+    }
+
     private func drainEvents() {
-        guard acceptingPackets, let core else { return }
+        guard let core else { return }
         while true {
             let next: RustCore.Event?
             do { next = try core.pollEvent() }
@@ -171,6 +295,11 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             guard let event = next else { break }
             if event.kind == 2 {
                 SharedState().setExtensionState("state-\(event.value)")
+                if event.value == 4 {
+                    activatePacketPumps()
+                } else if [3, 5, 6, 7, 8].contains(event.value) {
+                    deactivatePacketPumps()
+                }
             }
         }
         workQueue.asyncAfter(deadline: .now() + .milliseconds(100)) { [weak self] in
@@ -196,8 +325,16 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
 
 private enum TunnelError: LocalizedError {
     case invalidConfiguration
+    case invalidMessage
+    case providerUnavailable
 
-    var errorDescription: String? { "Invalid or incompatible tunnel configuration" }
+    var errorDescription: String? {
+        switch self {
+        case .invalidConfiguration: return "Invalid or incompatible tunnel configuration"
+        case .invalidMessage: return "Invalid tunnel control message"
+        case .providerUnavailable: return "Packet tunnel provider is unavailable"
+        }
+    }
 }
 
 private func monotonicMilliseconds() -> UInt64 {

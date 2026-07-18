@@ -11,6 +11,8 @@ mod arti;
 mod backoff;
 mod control;
 mod ctor;
+#[cfg(all(feature = "embedded-ctor", target_vendor = "apple"))]
+mod embedded;
 mod health;
 mod pool;
 mod socks;
@@ -23,6 +25,8 @@ pub mod mock;
 pub use arti::ArtiBackend;
 pub use backoff::{BoundedBackoff, RetryPolicy};
 pub use ctor::{CTorBackend, CTorConfig};
+#[cfg(all(feature = "embedded-ctor", target_vendor = "apple"))]
+pub use embedded::{EmbeddedCTorBackend, EmbeddedCTorConfig};
 pub use health::{HealthObserver, TorHealthMonitor};
 pub use pool::TorContextPool;
 pub use types::{

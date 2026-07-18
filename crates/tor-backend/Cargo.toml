@@ -12,11 +12,14 @@ rust-version = "1.78"
 [features]
 default = []
 test-utils = ["onionroute-common-types/test-utils"]
+embedded-ctor = ["dep:onionroute-embedded-ctor-sys"]
+embedded-ctor-native = ["embedded-ctor", "onionroute-embedded-ctor-sys/native"]
 
 [dependencies]
 hex = "=0.4.3"
 hmac = "=0.12.1"
 onionroute-common-types = { path = "../common-types" }
+onionroute-embedded-ctor-sys = { path = "../embedded-ctor-sys", optional = true }
 rand = "=0.8.5"
 sha2 = "=0.10.8"
 subtle = "=2.5.0"

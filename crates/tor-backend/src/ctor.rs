@@ -110,9 +110,9 @@ impl CTorConfig {
 }
 
 #[derive(Clone)]
-struct RuntimeOptions {
-    bridges: BridgeConfig,
-    proxy: Option<ProxyConfig>,
+pub(crate) struct RuntimeOptions {
+    pub(crate) bridges: BridgeConfig,
+    pub(crate) proxy: Option<ProxyConfig>,
 }
 
 struct RuntimeState {
@@ -820,19 +820,19 @@ impl TorBackendExt for CTorBackend {
     }
 }
 
-struct TorPaths {
-    torrc: PathBuf,
-    cookie: PathBuf,
+pub(crate) struct TorPaths {
+    pub(crate) torrc: PathBuf,
+    pub(crate) cookie: PathBuf,
     #[cfg(not(unix))]
-    control_port_file: PathBuf,
+    pub(crate) control_port_file: PathBuf,
     #[cfg(unix)]
-    control_socket: PathBuf,
-    data: PathBuf,
-    cache: PathBuf,
+    pub(crate) control_socket: PathBuf,
+    pub(crate) data: PathBuf,
+    pub(crate) cache: PathBuf,
 }
 
 impl TorPaths {
-    fn new(root: &Path) -> Self {
+    pub(crate) fn new(root: &Path) -> Self {
         Self {
             torrc: root.join("torrc"),
             cookie: root.join("control.authcookie"),
@@ -846,7 +846,11 @@ impl TorPaths {
     }
 }
 
-fn render_torrc(paths: &TorPaths, options: &RuntimeOptions, sandbox: bool) -> OnionResult<String> {
+pub(crate) fn render_torrc(
+    paths: &TorPaths,
+    options: &RuntimeOptions,
+    sandbox: bool,
+) -> OnionResult<String> {
     options.bridges.validate()?;
     let mut lines = vec![
         format!("DataDirectory {}", quote_path(&paths.data)?),
@@ -951,7 +955,7 @@ fn quote_value(value: &str) -> OnionResult<String> {
     ))
 }
 
-fn write_private_file(path: &Path, bytes: &[u8]) -> OnionResult<()> {
+pub(crate) fn write_private_file(path: &Path, bytes: &[u8]) -> OnionResult<()> {
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -969,7 +973,7 @@ fn write_private_file(path: &Path, bytes: &[u8]) -> OnionResult<()> {
 }
 
 #[cfg(unix)]
-fn secure_directory(path: &Path) -> OnionResult<()> {
+pub(crate) fn secure_directory(path: &Path) -> OnionResult<()> {
     use std::os::unix::fs::{MetadataExt, PermissionsExt};
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700))
         .map_err(|_| startup_error("could not restrict Tor data directory"))?;
@@ -983,7 +987,7 @@ fn secure_directory(path: &Path) -> OnionResult<()> {
 }
 
 #[cfg(windows)]
-fn secure_directory(path: &Path) -> OnionResult<()> {
+pub(crate) fn secure_directory(path: &Path) -> OnionResult<()> {
     let username = std::env::var("USERNAME")
         .map_err(|_| startup_error("could not identify Tor data directory owner"))?;
     let domain = std::env::var("USERDOMAIN").unwrap_or_default();
@@ -1012,7 +1016,7 @@ fn secure_directory(path: &Path) -> OnionResult<()> {
 }
 
 #[cfg(not(any(unix, windows)))]
-fn secure_directory(_path: &Path) -> OnionResult<()> {
+pub(crate) fn secure_directory(_path: &Path) -> OnionResult<()> {
     Err(configuration_error(
         "secure Tor data directories are unsupported",
     ))
@@ -1024,7 +1028,7 @@ fn parse_control_port_file(contents: &str) -> Option<SocketAddr> {
     line.strip_prefix("PORT=")?.parse().ok()
 }
 
-async fn read_socks_listener(control: &mut ControlClient) -> OnionResult<SocketAddr> {
+pub(crate) async fn read_socks_listener(control: &mut ControlClient) -> OnionResult<SocketAddr> {
     let lines = control.command("GETINFO net/listeners/socks").await?;
     for line in lines {
         let Some(value) = line.split_once('=').map(|(_, value)| value) else {
@@ -1042,7 +1046,7 @@ async fn read_socks_listener(control: &mut ControlClient) -> OnionResult<SocketA
     Err(startup_error("Tor SOCKS listener is unavailable"))
 }
 
-fn parse_bootstrap_progress(lines: &[String]) -> Option<u8> {
+pub(crate) fn parse_bootstrap_progress(lines: &[String]) -> Option<u8> {
     lines.iter().find_map(|line| {
         line.split_ascii_whitespace().find_map(|part| {
             part.strip_prefix("PROGRESS=")

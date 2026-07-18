@@ -1,5 +1,12 @@
 [workspace]
-members = ["crates/common-types"]
+members = [
+    "crates/common-types",
+    "crates/packet-engine",
+    "crates/dns-engine",
+    "crates/policy-engine",
+    "crates/client-core",
+    "crates/mobile-ffi",
+]
 resolver = "2"
 
 [workspace.package]
@@ -7,3 +14,8 @@ edition = "2021"
 license = "Apache-2.0"
 rust-version = "1.78"
 
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+strip = "debuginfo"

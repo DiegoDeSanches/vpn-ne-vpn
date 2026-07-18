@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 #define OR_ABI_MAJOR 1u
-#define OR_ABI_MINOR 0u
+#define OR_ABI_MINOR 1u
 #define OR_EVENT_DATA_CAPACITY 64u
 #define OR_MAX_PACKET_BYTES (128u * 1024u)
 
@@ -26,7 +26,13 @@ enum or_status {
   OR_STATUS_BACKPRESSURE = -6,
   OR_STATUS_CANCELLED = -7,
   OR_STATUS_UNAVAILABLE = -8,
+  OR_STATUS_BUFFER_TOO_SMALL = -9,
   OR_STATUS_PANIC = -127
+};
+
+enum or_packet_protocol {
+  OR_PACKET_PROTOCOL_IPV4 = 4,
+  OR_PACKET_PROTOCOL_IPV6 = 6
 };
 
 enum or_event_kind {
@@ -99,6 +105,8 @@ int32_t or_client_connect(or_client_handle_t handle,
 int32_t or_client_disconnect(or_client_handle_t handle,
                              uint64_t *out_operation_id);
 int32_t or_client_set_tunnel_ready(or_client_handle_t handle, uint8_t ready);
+/* Positive readiness is derived by the installed Rust factory. In production,
+ * ready=1 returns OR_STATUS_UNAVAILABLE; ready=0 remains a fail-closed signal. */
 int32_t or_client_set_core_ready(or_client_handle_t handle, uint8_t ready);
 int32_t or_client_set_network(or_client_handle_t handle, uint8_t available,
                               uint8_t expensive, uint8_t constrained,
@@ -119,10 +127,12 @@ int32_t or_client_resume(or_client_handle_t handle, uint64_t monotonic_ms,
 int32_t or_client_submit_packet(or_client_handle_t handle,
                                 const uint8_t *packet, size_t packet_len);
 int32_t or_client_poll_event(or_client_handle_t handle, or_event_t *out_event);
+int32_t or_client_poll_packet(or_client_handle_t handle, uint8_t *out_packet,
+                              size_t packet_capacity, size_t *out_packet_len,
+                              uint32_t *out_protocol);
 
 #ifdef __cplusplus
 }
 #endif
 
 #endif
-

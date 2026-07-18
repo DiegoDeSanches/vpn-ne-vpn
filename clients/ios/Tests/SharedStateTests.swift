@@ -9,5 +9,13 @@ final class SharedStateTests: XCTestCase {
         state.setDesiredConnection(false)
         XCTAssertFalse(state.desiredConnection())
     }
-}
 
+    func testExtensionStateAcceptsOnlyClosedSchemaPrefixes() {
+        let state = SharedState()
+        state.setExtensionState("blocked-packet-core-unavailable")
+        XCTAssertEqual(state.extensionState(), "blocked-packet-core-unavailable")
+
+        state.setExtensionState("destination-example.invalid")
+        XCTAssertEqual(state.extensionState(), "blocked-packet-core-unavailable")
+    }
+}

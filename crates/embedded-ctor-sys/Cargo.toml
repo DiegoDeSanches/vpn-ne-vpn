@@ -1,0 +1,17 @@
+[package]
+name = "onionroute-embedded-ctor-sys"
+version = "0.1.0"
+description = "Minimal safe wrapper around C Tor's stable embedding API"
+edition = "2021"
+license = "Apache-2.0"
+rust-version = "1.78"
+links = "onionroute_tor"
+
+[workspace]
+
+[features]
+default = []
+native = []
+
+[lib]
+crate-type = ["rlib"]

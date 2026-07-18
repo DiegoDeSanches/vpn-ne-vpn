@@ -7,11 +7,16 @@
 
 mod core;
 mod dispatcher;
+mod factory;
 mod packet_io;
 mod shutdown;
 
 pub use core::{ActiveRoute, ClientCore, CoreOutput, LocalDiagnostic};
 pub use dispatcher::{ConnectionDispatcher, DispatcherCancellation, DispatcherConfig};
+pub use factory::{
+    ClientRuntimeConfig, ClientRuntimeFactory, PreparedClientRuntime,
+    ProductionClientRuntimeFactory,
+};
 pub use packet_io::{PacketReader, PacketWriter, TunnelPacketIo};
 pub use shutdown::{ShutdownCoordinator, ShutdownPhase};
 

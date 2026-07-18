@@ -7,8 +7,6 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     HEADER_SEARCH_PATHS: "$(SRCROOT)/../../crates/mobile-ffi/include"
-    LIBRARY_SEARCH_PATHS: "$(SRCROOT)/Frameworks"
-    OTHER_LDFLAGS: "$(inherited) -lonionroute_mobile_ffi"
 targets:
   OnionRouteApp:
     type: application
@@ -22,9 +20,14 @@ targets:
         CODE_SIGN_ENTITLEMENTS: OnionRouteApp/OnionRouteApp.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: OnionRouteApp/Support/OnionRoute-Bridging-Header.h
         INFOPLIST_FILE: OnionRouteApp/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     dependencies:
       - target: PacketTunnel
         embed: true
+      - framework: Frameworks/OnionRouteMobileFFI.xcframework
+        embed: false
+      - sdk: NetworkExtension.framework
+      - sdk: Security.framework
   PacketTunnel:
     type: app-extension
     platform: iOS
@@ -37,6 +40,11 @@ targets:
         CODE_SIGN_ENTITLEMENTS: PacketTunnel/PacketTunnel.entitlements
         SWIFT_OBJC_BRIDGING_HEADER: OnionRouteApp/Support/OnionRoute-Bridging-Header.h
         INFOPLIST_FILE: PacketTunnel/Info.plist
+    dependencies:
+      - framework: Frameworks/OnionRouteMobileFFI.xcframework
+        embed: false
+      - sdk: NetworkExtension.framework
+      - sdk: Security.framework
   OnionRouteAppTests:
     type: bundle.unit-test
     platform: iOS
