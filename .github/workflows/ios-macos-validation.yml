@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: Check out source
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Report Apple toolchain
         run: |
@@ -44,7 +44,17 @@ jobs:
         run: rustup run 1.78.0 cargo test --workspace --locked
 
       - name: Lint Rust workspace
-        run: rustup run 1.78.0 cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: |
+          rustup run 1.78.0 cargo clippy \
+            --locked \
+            --all-targets \
+            --no-deps \
+            -p onionroute-packet-engine \
+            -p onionroute-dns-engine \
+            -p onionroute-policy-engine \
+            -p onionroute-client-core \
+            -p onionroute-mobile-ffi \
+            -- -D warnings
 
       - name: Check embedded C Tor Apple adapter
         run: |
@@ -55,6 +65,7 @@ jobs:
             --target aarch64-apple-ios
           rustup run 1.78.0 cargo clippy \
             --locked \
+            --no-deps \
             --manifest-path crates/tor-backend/Cargo.toml \
             --features embedded-ctor \
             --target aarch64-apple-ios \
