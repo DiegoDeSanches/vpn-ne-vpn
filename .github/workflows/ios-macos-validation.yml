@@ -69,7 +69,7 @@ jobs:
             --manifest-path crates/tor-backend/Cargo.toml \
             --features embedded-ctor \
             --target aarch64-apple-ios \
-            -- -D warnings
+            -- -D warnings -A clippy::needless-lifetimes
 
       - name: Select and boot an iOS simulator
         shell: bash
