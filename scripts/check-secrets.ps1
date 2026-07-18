@@ -109,7 +109,9 @@ foreach ($scanItem in $scanItems) {
             continue
         }
 
-        $file = Get-Item -LiteralPath $absolutePath
+        # PowerShell treats dotfiles as hidden on Unix. Keep them in scope: they
+        # are valid commit candidates and must not bypass the secret scanner.
+        $file = Get-Item -LiteralPath $absolutePath -Force
         if ($file.Length -gt 5MB) {
             $skippedBinaryOrLarge++
             continue
