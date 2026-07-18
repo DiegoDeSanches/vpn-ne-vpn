@@ -138,3 +138,110 @@ directory format, token format or gateway public protocol was changed.
    trigger automated rollback without making monitoring a global trust root?
 6. What RPO/RTO values and jurisdictions are approved for the first control-plane
    PostgreSQL and Vault deployments?
+
+---
+
+## 2026-07-18 addendum: experimental staging CI/CD
+
+### Implemented
+
+- Added backend CI for the root workspace, control-plane services, seven standalone
+  Rust manifests, architecture/secret checks, Compose policy tests, and an immutable
+  staging image build.
+- Added manual, protected-environment delivery that promotes the exact CI-published
+  GHCR digest, creates an Ed25519-signed bundle, pins the SSH host key, and streams it
+  to a forced root-owned controller.
+- Added a staging-only Compose stack for PostgreSQL 18, directory, health,
+  administrator, revocation, and Tor v3 Onion Service components. Signing, token,
+  gateway, and all user data-plane components remain excluded.
+- Added expand-only schema migration, bounded input validation, health-gated rollout,
+  signed workflow-run anti-replay state, atomic release metadata, immutable-ID
+  rollback, audit logging, and server bootstrap with distinct SSH and bundle-signing
+  keys.
+- Added distinct non-superuser PostgreSQL roles/passwords for all four services,
+  final-process PostgreSQL readiness, Tor control-port bootstrap readiness, and an
+  end-to-end request through the generated Onion Service.
+- Restored the declared Rust 1.78 MSRV by pinning only incompatible transitive lock
+  entries in `services`, `auth-tokens`, and `token-service`.
+
+### Files added or changed
+
+- `.github/workflows/backend-ci.yml`, `.github/workflows/staging-deploy.yml`, and
+  `.dockerignore`.
+- `infrastructure/staging/` image, Compose, migration/bundle helpers, and tests.
+- `infrastructure/staging-ssh/` controller, bootstrap, operator documentation, and
+  delivery contract tests.
+- ADR-0021, CP-0011, the ADR index, three Cargo lock files, and this report.
+
+### Public interfaces
+
+- GitHub Environment `staging` with five documented environment-secret names.
+- Forced-command protocol `deploy <40-hex-revision> <bundle-sha256> <run-id>`.
+- Signed bundle member/manifest contract and OCI revision label.
+
+No protobuf, token or directory format, Rust public API, root Cargo manifest, or
+production deployment contract changed. CI is a protected configuration change
+covered by CP-0011 and ADR-0021.
+
+### Assumptions
+
+- `gateway/multihop` remains the default/deployable branch.
+- The staging host is the inspected Ubuntu server at `66.248.207.180`; its SSH host
+  key must still be verified through the provider console.
+- PostgreSQL and Tor identities remain server-side. GitHub holds only delivery
+  credentials and the staging bundle-signing key.
+- The `staging` Environment has been created and restricted to `gateway/multihop`;
+  its five secrets remain intentionally unset until provider-console bootstrap.
+
+### Tests passing
+
+- Rust 1.78: root compile/tests; strict services fmt/Clippy/tests; Clippy/tests for
+  gateway-protocol, gateway-daemon, gateway-multihop, auth-tokens, tor-backend,
+  circuit-manager, and token-service.
+- Full multi-stage image build with digest-pinned Dockerfile frontend/base images and
+  exact OCI revision label.
+- Compose contract tests (7), SSH delivery contract tests (11), `actionlint`, YAML
+  parsing, shell syntax, signed-bundle happy path, and tampered-signature rejection.
+- Local full-stack smoke: PostgreSQL 18 final-process readiness, schema and
+  least-privilege role migration, all four Rust services healthy, Tor bootstrap at
+  100%, and an HTTP response through the generated v3 Onion Service. The isolated
+  test containers, network, volumes, and five passwords were removed afterward.
+
+### Tests not passing or not run
+
+- Root and some standalone historical source is not rustfmt-clean and has pre-existing
+  Clippy warnings. CI reports formatting as advisory and keeps compilation/tests
+  mandatory; services remain strict with `-D warnings`.
+- No live SSH deployment, rollback fault injection, or reboot persistence test was run
+  because server root access, pinned host key, and deploy/signing keys are not yet
+  installed.
+
+### Dependencies and security risks
+
+- The user/operator must log in through the provider Native-console, verify the host
+  key, install Docker Compose v2 and the restricted controller, and then populate the
+  five existing GitHub Environment secret slots.
+- A protected workflow or bundle-signing-key compromise can control staging
+  containers; an SSH-key compromise alone cannot authorize an unsigned bundle.
+- Debian packages installed in the runtime stage still come from the current Bookworm
+  repository even though base images are digest-pinned. The promoted GHCR digest is
+  immutable, but a future rebuild of the same source may differ until an apt snapshot
+  is introduced.
+- The 1 GiB server capacity and public-SSH attack surface require live observation;
+  this adapter remains forbidden for production.
+
+### Contract proposals and readiness
+
+- Created CP-0011 for the protected CI/staging delivery change and ADR-0021 for its
+  staging-only trust boundary.
+- Code and local evidence are ready for branch review. First live deployment is not
+  ready until provider-console bootstrap and GitHub Environment secrets are complete.
+
+### Open questions
+
+1. Can the operator provide an authenticated root console session and independently
+   confirm the server Ed25519 host-key fingerprint?
+2. Does the repository plan support required reviewers for the `staging` Environment,
+   and who should be the reviewer?
+3. What retention limit should replace indefinite staging image/release retention
+   after the first rollback drill?

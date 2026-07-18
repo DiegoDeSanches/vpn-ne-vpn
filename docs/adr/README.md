@@ -16,6 +16,7 @@
 | [0012](0012-immutable-multi-provider-platform.md) | Immutable multi-provider platform and workload-identity secret delivery | Proposed, experimental |
 | [0014](0014-control-plane-ingress-and-signing-isolation.md) | Separate control API ingresses and offline-root trust | Accepted |
 | [0017](0017-github-releases-for-binary-artifacts.md) | Immutable GitHub Releases for signed binary artifacts | Accepted |
+| [0021](0021-staging-ssh-docker-delivery.md) | Restricted SSH delivery for experimental staging control plane | Accepted for staging only |
 
 ADR immutable после `Accepted`: изменение решения создаёт новый ADR со ссылкой
 `Supersedes`. Любое изменение public contract, dependency direction, криптографии,

@@ -1,0 +1,195 @@
+name: Deploy staging control plane
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type deploy-staging to start the guarded staging deployment
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+  packages: read
+  statuses: read
+
+concurrency:
+  group: onionroute-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build once and deploy over restricted SSH
+    if: >-
+      github.ref == 'refs/heads/gateway/multihop' &&
+      inputs.confirmation == 'deploy-staging'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: staging
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Validate required staging secrets
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          BUNDLE_SIGNING_KEY: ${{ secrets.STAGING_BUNDLE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          for value in \
+            SSH_HOST \
+            SSH_PORT \
+            SSH_PRIVATE_KEY \
+            SSH_KNOWN_HOSTS \
+            BUNDLE_SIGNING_KEY; do
+            if [[ -z "${!value}" ]]; then
+              echo "required staging environment secret is missing" >&2
+              exit 78
+            fi
+          done
+          if [[ ! "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] ||
+             (( SSH_PORT < 1 || SSH_PORT > 65535 )); then
+            echo "invalid staging SSH port" >&2
+            exit 78
+          fi
+
+      - name: Resolve the successful CI-promoted image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          api_args=(
+            --fail
+            --silent
+            --show-error
+            --header "Accept: application/vnd.github+json"
+            --header "Authorization: Bearer ${GH_TOKEN}"
+            --header "X-GitHub-Api-Version: 2022-11-28"
+          )
+          runs="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/actions/workflows/backend-ci.yml/runs?head_sha=${GITHUB_SHA}&branch=gateway%2Fmultihop&event=push&status=success&per_page=100")"
+          jq -e --arg sha "$GITHUB_SHA" '
+            [.workflow_runs[] | select(
+              .head_sha == $sha and
+              .head_branch == "gateway/multihop" and
+              .event == "push" and
+              .conclusion == "success"
+            )] | length > 0
+          ' <<< "$runs" >/dev/null || {
+            echo "no successful Backend CI push run exists for this revision" >&2
+            exit 78
+          }
+          statuses="$(curl "${api_args[@]}" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/status?per_page=100")"
+          image_digest="$(jq -r '
+            [.statuses[] | select(.context == "onionroute/staging-image")]
+            | .[0]
+            | select(.state == "success")
+            | .description // empty
+          ' <<< "$statuses")"
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "CI image status does not contain a valid immutable digest" >&2
+            exit 78
+          fi
+          image_repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf 'OR_PROMOTED_IMAGE=%s@%s\n' \
+            "$image_repository" "$image_digest" >> "$GITHUB_ENV"
+
+      - name: Pull the exact CI-promoted image
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          printf '%s' "$GH_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker pull "$OR_PROMOTED_IMAGE"
+          docker tag "$OR_PROMOTED_IMAGE" "onionroute/control-plane:${GITHUB_SHA}"
+          test "$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "onionroute/control-plane:${GITHUB_SHA}")" = "${GITHUB_SHA}"
+
+      - name: Validate staging Compose policy
+        env:
+          OR_CONTROL_PLANE_IMAGE: onionroute/control-plane:${{ github.sha }}
+        run: python3 infrastructure/staging/test_compose.py
+
+      - name: Configure distinct delivery and bundle-signing keys
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+          SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.STAGING_SSH_KNOWN_HOSTS }}
+          BUNDLE_SIGNING_KEY: ${{ secrets.STAGING_BUNDLE_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -Eeuo pipefail
+          install -d -m 0700 "${RUNNER_TEMP}/onionroute-ssh"
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "${RUNNER_TEMP}/onionroute-ssh/id_ed25519"
+          printf '%s\n' "$BUNDLE_SIGNING_KEY" > "${RUNNER_TEMP}/onionroute-ssh/bundle_signing_ed25519"
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "${RUNNER_TEMP}/onionroute-ssh/known_hosts"
+          chmod 0600 \
+            "${RUNNER_TEMP}/onionroute-ssh/id_ed25519" \
+            "${RUNNER_TEMP}/onionroute-ssh/bundle_signing_ed25519" \
+            "${RUNNER_TEMP}/onionroute-ssh/known_hosts"
+          deploy_public="$(ssh-keygen -y -f "${RUNNER_TEMP}/onionroute-ssh/id_ed25519")"
+          signing_public="$(ssh-keygen -y -f "${RUNNER_TEMP}/onionroute-ssh/bundle_signing_ed25519")"
+          if [[ "$deploy_public" == "$signing_public" ]]; then
+            echo "SSH deploy and bundle-signing keys must be distinct" >&2
+            exit 78
+          fi
+          known_host="$SSH_HOST"
+          if [[ "$SSH_PORT" != "22" ]]; then
+            known_host="[$SSH_HOST]:$SSH_PORT"
+          fi
+          if ! ssh-keygen -F "$known_host" \
+               -f "${RUNNER_TEMP}/onionroute-ssh/known_hosts" >/dev/null; then
+            echo "pinned known_hosts does not contain the staging endpoint" >&2
+            exit 78
+          fi
+
+      - name: Create a signed, checksummed deployment bundle
+        run: |
+          bash infrastructure/staging/build-bundle.sh \
+            "${GITHUB_SHA}" \
+            "${GITHUB_RUN_ID}" \
+            "${RUNNER_TEMP}/onionroute-staging-${GITHUB_SHA}.tgz" \
+            "${RUNNER_TEMP}/onionroute-ssh/bundle_signing_ed25519"
+
+      - name: Stream bundle to the forced deploy controller
+        shell: bash
+        env:
+          SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+          SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+        run: |
+          set -Eeuo pipefail
+          bundle="${RUNNER_TEMP}/onionroute-staging-${GITHUB_SHA}.tgz"
+          bundle_digest="$(sha256sum "$bundle" | awk '{print $1}')"
+          ssh \
+            -p "$SSH_PORT" \
+            -i "${RUNNER_TEMP}/onionroute-ssh/id_ed25519" \
+            -o BatchMode=yes \
+            -o IdentitiesOnly=yes \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="${RUNNER_TEMP}/onionroute-ssh/known_hosts" \
+            -o ConnectTimeout=15 \
+            -o ServerAliveInterval=15 \
+            -o ServerAliveCountMax=4 \
+            "root@$SSH_HOST" \
+            "deploy ${GITHUB_SHA} $bundle_digest ${GITHUB_RUN_ID}" < "$bundle"
+
+      - name: Remove transient SSH material
+        if: always()
+        shell: bash
+        run: |
+          rm -rf -- "${RUNNER_TEMP}/onionroute-ssh"
+          docker logout ghcr.io || true

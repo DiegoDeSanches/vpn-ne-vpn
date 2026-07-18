@@ -1,0 +1,235 @@
+name: Backend CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - gateway/multihop
+      - infra/platform
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  policy:
+    name: Architecture and secret policy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Check architecture invariants
+        shell: pwsh
+        run: ./scripts/check-architecture.ps1
+      - name: Scan commit candidates for secrets
+        shell: pwsh
+        run: ./scripts/check-secrets.ps1
+      - name: Validate staging delivery contracts and shell syntax
+        shell: bash
+        run: |
+          python3 infrastructure/staging-ssh/test_delivery_contract.py
+          bash -n \
+            infrastructure/staging/build-bundle.sh \
+            infrastructure/staging/migrate.sh \
+            infrastructure/staging/service-entrypoint.sh \
+            infrastructure/staging/test_bundle.sh \
+            infrastructure/staging/test_runtime.sh \
+            infrastructure/staging-ssh/bootstrap-server.sh \
+            infrastructure/staging-ssh/onionroute-staging-deploy
+
+  core-rust:
+    name: Core Rust workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      # The imported root baseline predates this workflow and is not rustfmt-clean.
+      # Keep the debt visible without modifying protected common contracts here.
+      - name: Report existing formatting drift
+        continue-on-error: true
+        run: cargo +1.78.0 fmt --all -- --check
+      - name: Lint and compile the existing baseline
+        run: cargo +1.78.0 clippy --workspace --all-targets --locked
+      - name: Test
+        run: cargo +1.78.0 test --workspace --locked
+
+  services-rust:
+    name: Control-plane Rust workspace
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      - name: Check formatting
+        run: cargo +1.78.0 fmt --manifest-path services/Cargo.toml --all -- --check
+      - name: Lint
+        run: |
+          cargo +1.78.0 clippy \
+            --manifest-path services/Cargo.toml \
+            --workspace --all-targets --locked -- -D warnings
+      - name: Test
+        run: |
+          cargo +1.78.0 test \
+            --manifest-path services/Cargo.toml \
+            --workspace --locked
+
+  standalone-rust:
+    name: Standalone Rust - ${{ matrix.component }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: gateway-protocol
+            manifest: crates/gateway-protocol/Cargo.toml
+          - component: gateway-daemon
+            manifest: crates/gateway-daemon/Cargo.toml
+          - component: gateway-multihop
+            manifest: crates/gateway-multihop/Cargo.toml
+          - component: auth-tokens
+            manifest: crates/auth-tokens/Cargo.toml
+          - component: tor-backend
+            manifest: crates/tor-backend/Cargo.toml
+          - component: circuit-manager
+            manifest: crates/circuit-manager/Cargo.toml
+          - component: token-service
+            manifest: services/token-service/Cargo.toml
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.78
+        run: |
+          rustup toolchain install 1.78.0 --profile minimal \
+            --component rustfmt --component clippy
+      - name: Check formatting
+        continue-on-error: true
+        run: |
+          cargo +1.78.0 fmt \
+            --manifest-path "${{ matrix.manifest }}" \
+            --all -- --check
+      - name: Lint
+        run: |
+          cargo +1.78.0 clippy \
+            --manifest-path "${{ matrix.manifest }}" \
+            --all-targets --locked
+      - name: Test
+        run: |
+          cargo +1.78.0 test \
+            --manifest-path "${{ matrix.manifest }}" \
+            --locked
+
+  staging-image:
+    name: Staging control-plane image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    needs:
+      - policy
+      - core-rust
+      - services-rust
+      - standalone-rust
+    permissions:
+      contents: read
+      packages: write
+      statuses: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Mark immutable image build pending
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          payload="$(jq -nc \
+            --arg target_url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:"pending",context:"onionroute/staging-image",description:"building gated staging image",target_url:$target_url}')"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data "$payload" >/dev/null
+      - name: Validate staging Compose policy
+        env:
+          OR_CONTROL_PLANE_IMAGE: onionroute/control-plane:ci
+        run: python3 infrastructure/staging/test_compose.py
+      - name: Build the staging image
+        run: |
+          docker build \
+            --file infrastructure/staging/Dockerfile.control-plane \
+            --build-arg "OR_BUILD_REVISION=${GITHUB_SHA}" \
+            --build-arg "OR_IMAGE_SOURCE=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag "onionroute/control-plane:${GITHUB_SHA}" \
+            .
+      - name: Verify expected image tag
+        run: |
+          test "$(docker image inspect \
+            --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' \
+            "onionroute/control-plane:${GITHUB_SHA}")" = "${GITHUB_SHA}"
+      - name: Verify signed deployment bundle contract
+        run: bash infrastructure/staging/test_bundle.sh "${GITHUB_SHA}"
+      - name: Publish the CI-gated immutable image
+        if: github.event_name == 'push'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -Eeuo pipefail
+          image_repository="ghcr.io/${GITHUB_REPOSITORY,,}"
+          image_tag="${image_repository}:${GITHUB_SHA}"
+          printf '%s' "$GH_TOKEN" |
+            docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag "onionroute/control-plane:${GITHUB_SHA}" "$image_tag"
+          push_output="$(docker push "$image_tag" 2>&1 | tee /dev/stderr)"
+          image_digest="$(sed -nE \
+            's/^.*digest: (sha256:[0-9a-f]{64}).*$/\1/p' \
+            <<< "$push_output" | tail -n 1)"
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "registry did not return an immutable image digest" >&2
+            exit 70
+          fi
+          payload="$(jq -nc \
+            --arg digest "$image_digest" \
+            --arg target_url "https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" \
+            '{state:"success",context:"onionroute/staging-image",description:$digest,target_url:$target_url}')"
+          curl --fail --silent --show-error \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/statuses/${GITHUB_SHA}" \
+            --data "$payload" >/dev/null
+      - name: Log out of the image registry
+        if: always() && github.event_name == 'push'
+        run: docker logout ghcr.io || true

@@ -1,0 +1,266 @@
+name: onionroute-staging
+
+x-rust-service: &rust-service
+  image: "${OR_CONTROL_PLANE_IMAGE:?set an immutable staging image tag}"
+  pull_policy: never
+  network_mode: host
+  user: "10001:10001"
+  read_only: true
+  init: true
+  cap_drop: ["ALL"]
+  security_opt:
+    - no-new-privileges:true
+  pids_limit: 128
+  tmpfs:
+    - /tmp:size=16m,mode=0700
+  environment:
+    RUST_LOG: info
+  restart: unless-stopped
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "3"
+
+services:
+  postgres:
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    command:
+      - postgres
+      - -c
+      - shared_buffers=32MB
+      - -c
+      - max_connections=50
+      - -c
+      - work_mem=1MB
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 256m
+    shm_size: 64m
+    environment:
+      POSTGRES_DB: onionroute
+      POSTGRES_USER: onionroute
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres-superuser-password
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    secrets:
+      - postgres-superuser-password
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    tmpfs:
+      - /tmp:size=16m,mode=0700
+      - /var/run/postgresql:size=16m,mode=0770
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          test "$$(cat /proc/1/comm)" = postgres &&
+          pg_isready -U onionroute -d onionroute &&
+          test "$$(psql -X -U onionroute -d onionroute -Atqc 'SELECT 1')" = 1
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+    restart: unless-stopped
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  migrate:
+    image: postgres:18.4-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+    profiles: ["migration"]
+    user: "70:70"
+    group_add: ["10001"]
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 32
+    tmpfs:
+      - /tmp:size=8m,mode=0700
+    entrypoint: ["/bin/sh"]
+    command: ["/deploy/migrate.sh"]
+    secrets:
+      - postgres-superuser-password
+      - directory-service-password
+      - health-collector-password
+      - admin-api-password
+      - revocation-service-password
+    volumes:
+      - ./migrate.sh:/deploy/migrate.sh:ro
+      - "${OR_MIGRATION_SQL_FILE:-./0001_control_plane.sql}:/deploy/0001_control_plane.sql:ro"
+      - ./database-roles.sql:/deploy/database-roles.sql:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  tor-directory:
+    image: "${OR_CONTROL_PLANE_IMAGE:?set an immutable staging image tag}"
+    pull_policy: never
+    network_mode: host
+    read_only: true
+    init: true
+    cap_drop: ["ALL"]
+    cap_add: ["CHOWN", "DAC_OVERRIDE", "FOWNER", "SETGID", "SETUID"]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 128
+    mem_limit: 128m
+    volumes:
+      - directory-onion:/var/lib/tor-directory
+      - directory-onion-public:/var/lib/onionroute-directory
+    tmpfs:
+      - /tmp:size=16m,mode=0700
+      - /run:size=16m,mode=0755
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        install -d -m 0700 -o debian-tor -g debian-tor /var/lib/tor-directory
+        install -d -m 0755 /var/lib/onionroute-directory
+        chown -R debian-tor:debian-tor /var/lib/tor-directory
+        gosu debian-tor tor -f /etc/tor/torrc.directory &
+        tor_pid=$$!
+        trap 'kill -TERM "$$tor_pid" 2>/dev/null || true' TERM INT
+        attempts=0
+        while [ ! -s /var/lib/tor-directory/hidden_service/hostname ]; do
+          attempts=$$((attempts + 1))
+          if [ "$$attempts" -ge 180 ]; then
+            kill -TERM "$$tor_pid" 2>/dev/null || true
+            wait "$$tor_pid" || true
+            exit 75
+          fi
+          sleep 1
+        done
+        install -m 0444 -o 10001 -g 10001 \
+          /var/lib/tor-directory/hidden_service/hostname \
+          /var/lib/onionroute-directory/hostname
+        wait "$$tor_pid"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          cookie=$$(od -An -tx1 -v /var/lib/tor-directory/control_auth_cookie | tr -d ' \n') &&
+          test -s /var/lib/tor-directory/hidden_service/hostname &&
+          printf 'AUTHENTICATE %s\r\nGETINFO status/bootstrap-phase\r\nQUIT\r\n' "$$cookie" |
+          nc -w 2 127.0.0.1 29051 |
+          grep -q 'status/bootstrap-phase=NOTICE BOOTSTRAP PROGRESS=100'
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+    restart: unless-stopped
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  directory-service:
+    <<: *rust-service
+    command: ["onionroute-directory-service"]
+    mem_limit: 96m
+    environment:
+      OR_DATABASE_PASSWORD_FILE: /run/secrets/directory-service-password
+      OR_CLIENT_BIND: 127.0.0.1:18080
+      OR_CLIENT_ONION_HOSTNAME_FILE: /var/lib/onionroute-directory/hostname
+      RUST_LOG: info
+    volumes:
+      - directory-onion-public:/var/lib/onionroute-directory:ro
+    secrets:
+      - directory-service-password
+    depends_on:
+      postgres:
+        condition: service_healthy
+      tor-directory:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18080"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  health-collector:
+    <<: *rust-service
+    command: ["onionroute-health-collector"]
+    mem_limit: 64m
+    environment:
+      OR_DATABASE_PASSWORD_FILE: /run/secrets/health-collector-password
+      OR_HEALTH_BIND: 127.0.0.1:18081
+      RUST_LOG: info
+    secrets:
+      - health-collector-password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18081"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  admin-api:
+    <<: *rust-service
+    command: ["onionroute-admin-api"]
+    mem_limit: 64m
+    environment:
+      OR_DATABASE_PASSWORD_FILE: /run/secrets/admin-api-password
+      OR_ADMIN_BIND: 127.0.0.1:18082
+      OR_CLIENT_BIND: 127.0.0.1:18080
+      RUST_LOG: info
+    secrets:
+      - admin-api-password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18082"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  revocation-service:
+    <<: *rust-service
+    command: ["onionroute-revocation-service"]
+    mem_limit: 64m
+    environment:
+      OR_DATABASE_PASSWORD_FILE: /run/secrets/revocation-service-password
+      OR_REVOCATION_BIND: 127.0.0.1:18084
+      OR_ADMIN_BIND: 127.0.0.1:18082
+      OR_CLIENT_BIND: 127.0.0.1:18080
+      RUST_LOG: info
+    secrets:
+      - revocation-service-password
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "18084"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+secrets:
+  postgres-superuser-password:
+    file: "${OR_POSTGRES_SUPERUSER_PASSWORD_FILE:-/etc/onionroute-staging/secrets/postgres-superuser-password}"
+  directory-service-password:
+    file: "${OR_DIRECTORY_DB_PASSWORD_FILE:-/etc/onionroute-staging/secrets/directory-service-password}"
+  health-collector-password:
+    file: "${OR_HEALTH_DB_PASSWORD_FILE:-/etc/onionroute-staging/secrets/health-collector-password}"
+  admin-api-password:
+    file: "${OR_ADMIN_DB_PASSWORD_FILE:-/etc/onionroute-staging/secrets/admin-api-password}"
+  revocation-service-password:
+    file: "${OR_REVOCATION_DB_PASSWORD_FILE:-/etc/onionroute-staging/secrets/revocation-service-password}"
+
+volumes:
+  postgres-data:
+  directory-onion:
+  directory-onion-public:
